@@ -6,27 +6,32 @@ Context file for both Cowork and Claude Code. Keep this up to date as the projec
 
 ## What this is
 
-A self-hosted photo gallery for an amateur photographer. Static Hugo site (fast, no server-side rendering for visitors) + a private Node.js admin panel for managing photos from anywhere (phone or laptop). Hosted on a Mac Mini at home.
+A self-hosted photo gallery for an amateur photographer. Static Hugo site (fast, no server-side rendering for visitors) + a private Node.js admin panel for managing photos from anywhere (phone or laptop). Hosted on a Mac Mini at home, served via Cloudflare Tunnel.
 
 **Repo:** https://github.com/adobebulk/static-photos
 
 ---
 
-## Architecture
+## Target architecture (partially implemented — see Current State)
 
 ```
+Phone / laptop (owner)
+  → Cloudflare Access (login gate)
+    → Cloudflare Tunnel
+      → Admin panel :3001 on Mac Mini
+          → saves photos to site/content/projects/<slug>/
+          → git push → GitHub
+              → (optional) Cloudflare Pages build
+          OR  → Hugo rebuilds locally on Mac Mini
+              → Caddy serves site/public/ directly
+
 Browser (visitor)
-  → Caddy (port 80/443)
-    → site/public/          ← Hugo static output, rebuilt on demand
-
-Browser (owner, private)
-  → localhost:3001           ← Node.js admin panel
-    → creates/edits content/projects/<slug>/
-    → triggers Hugo rebuild
-    → site/public/ updated
+  → Cloudflare Tunnel
+    → Caddy :80 on Mac Mini
+      → site/public/   ← Hugo static output
 ```
 
-Photos live as **Hugo page bundle resources** — each series is a directory under `site/content/projects/<slug>/` containing `index.md` (metadata) and the image files. Hugo processes them at build time (resize, thumbnail generation).
+**Photos live on the Mac Mini** — never need to go to GitHub or a cloud service. The Mac Mini is the hub. Cloudflare Tunnel makes it reachable from anywhere without exposing a home IP or opening router ports.
 
 ---
 
@@ -37,9 +42,11 @@ Photos live as **Hugo page bundle resources** — each series is a directory und
 | Static site | Hugo (extended) | `brew install hugo` |
 | CSS | Tailwind CSS v3 | Built via CLI, not PostCSS |
 | Lightbox | PhotoSwipe v5 | Loaded from jsDelivr CDN |
-| Admin panel | Node.js + Express + Multer | Port 3001, LAN only |
-| Web server | Caddy | Auto-HTTPS when domain configured |
-| Remote access | Tailscale (planned) | Not yet set up |
+| Admin panel | Node.js + Express + Multer + Sharp | Port 3001 |
+| Image processing | Sharp | Normalises uploads to JPEG, max 4000px |
+| Web server | Caddy | Auto-HTTPS, serves Hugo output |
+| Tunnel | Cloudflare Tunnel (`cloudflared`) | Exposes Caddy + admin panel securely |
+| Auth | Cloudflare Access | Login gate in front of admin panel |
 
 ---
 
@@ -52,28 +59,29 @@ static-photos/
 ├── package.json            ← root: Tailwind + dev scripts
 ├── package-lock.json
 ├── tailwind.config.js      ← scans site/themes/gallery/layouts/**
+├── wrangler.toml           ← Cloudflare Workers config (kept for reference)
 ├── Caddyfile               ← web server config
 ├── scripts/
 │   ├── setup.sh            ← Mac Mini one-time setup (installs Hugo, Caddy, Node, launchd)
 │   ├── rebuild.sh          ← CSS + Hugo rebuild in one command
-│   └── initial-commit.sh   ← one-time script used during init (can be deleted)
+│   └── initial-commit.sh   ← one-time script, safe to delete
 ├── admin/
 │   ├── server.js           ← Express server (API + static)
 │   ├── package.json
 │   └── public/
-│       └── index.html      ← mobile-friendly admin UI (vanilla JS, no framework)
+│       └── index.html      ← admin UI (monospace catalog aesthetic, vanilla JS)
 └── site/                   ← Hugo site root (pass --source site to hugo commands)
-    ├── hugo.toml           ← site config: set photographer name here
+    ├── hugo.toml           ← site config: baseURL="/", set photographer name
     ├── assets/css/
-    │   └── input.css       ← Tailwind source — edit this for custom styles
+    │   └── input.css       ← Tailwind source
     ├── static/css/
-    │   └── style.css       ← GENERATED — gitignored, run `npm run css:build`
+    │   └── style.css       ← committed generated CSS
     ├── content/
     │   └── projects/
     │       ├── _index.md
     │       └── <series-slug>/
-    │           ├── index.md    ← title, description, date, cover, draft
-    │           └── *.jpg/png   ← photos (Hugo page bundle resources)
+    │           ├── index.md    ← title, description, date, cover, draft (boolean)
+    │           └── *.jpg       ← photos (normalised to JPEG on upload via sharp)
     └── themes/gallery/
         └── layouts/
             ├── index.html      ← homepage: grid of series covers
@@ -122,7 +130,6 @@ site/content/projects/iceland-2025/
   index.md      ← front matter
   001.jpg
   002.jpg
-  003.jpg
 ```
 
 `index.md` front matter:
@@ -132,11 +139,13 @@ title: "Iceland 2025"
 description: "Volcanic landscapes and midnight sun."
 date: "2025-08-01"
 cover: "001.jpg"    # filename of cover photo; first image used if empty
-draft: "false"      # "true" = hidden from public site
+draft: false        # boolean — true = hidden from public site
 ---
 ```
 
-Photos are sorted **alphabetically by filename** in the gallery. Name them accordingly (001.jpg, 002.jpg…) to control order.
+Photos are sorted **alphabetically by filename**. Name them accordingly (001.jpg, 002.jpg…) to control order.
+
+**On upload**, the admin panel runs photos through Sharp: normalised to JPEG, max 4000px on longest dimension, quality 88. Keeps files well under Cloudflare's 25 MiB limit and Hugo processes them further at build time (thumbnails at 900x600, full-size at 2400px wide).
 
 ---
 
@@ -151,42 +160,74 @@ Photos are sorted **alphabetically by filename** in the gallery. Name them accor
 | DELETE | `/api/projects/:slug/photos/:filename` | Delete a photo |
 | PATCH | `/api/projects/:slug` | Update metadata `{ title, description, cover, draft }` |
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
-| POST | `/api/rebuild` | Trigger Tailwind + Hugo rebuild |
+| POST | `/api/rebuild` | Trigger Tailwind + Hugo rebuild (local preview) |
+| POST | `/api/deploy` | `git add site/content/ && git commit && git push` |
 | GET | `/photos/:slug/:filename` | Serve raw photo for admin preview |
 
 ---
 
 ## Hugo template notes
 
-- **Homepage** (`layouts/index.html`): queries `site.RegularPages` filtered to section `projects`, sorted by date descending. Uses `.Resources.ByType "image"` for cover.
-- **Series page** (`layouts/projects/single.html`): `.Resources.ByType "image"` lists all photos. Hugo resizes them at build time — thumbnails at `900x600`, full-size at `2400px wide`. First 6 load eagerly, rest lazy.
-- **Tailwind classes**: theme uses `group` / `group-hover:` for card hover effects. Custom utilities (`scale-102`, `scale-103`, `duration-400`) are defined in `tailwind.config.js`.
-- Hugo must be run as `hugo --source site` (not from repo root) because the Hugo project root is `site/`, not the repo root.
+- **Homepage** (`layouts/index.html`): queries `site.RegularPages` filtered to section `projects`, sorted by date descending. Cover lookup uses project's own `.Resources.GetMatch`, not `$` (homepage context).
+- **Series page** (`layouts/projects/single.html`): Hugo resizes at build time — thumbnails at `900x600`, full-size at `2400px wide`. First 6 images load eagerly, rest lazy.
+- **Tailwind**: theme uses `group` / `group-hover:`. Custom utilities (`scale-102`, `scale-103`, `duration-400`) in `tailwind.config.js`.
+- Hugo must be run as `hugo --source site` from repo root.
 
 ---
 
 ## Logging
 
 The admin panel writes timestamped logs to `logs/admin.log` (gitignored, auto-created).
-Every request, rebuild, file write, and error is captured there.
 
-To watch live:
 ```bash
 tail -f logs/admin.log
 ```
 
-This is the first place to look when something breaks.
+First place to look when something breaks.
+
+---
+
+## Security model
+
+The Mac Mini runs the server on a **restricted user account** that only has access to the repo directory and an external drive — not the admin account's backup drives.
+
+- **Cloudflare Access** gates the admin panel — login required before any request reaches the Mac Mini
+- **Caddy** serves only the Hugo static output publicly (no dynamic routes)
+- **Admin panel** has no built-in auth — relies entirely on Cloudflare Access being in front
+- **GitHub deploy key** (to be set up): scoped only to this repo, so a compromise can't touch other repos
+
+**Never expose the admin panel (port 3001) without Cloudflare Access in front of it.**
 
 ---
 
 ## Known issues / TODO
 
-- [ ] Admin photo thumbnails don't load (CSS `object-fit` on broken img tags — needs investigation)
-- [ ] No drag-to-reorder photos in admin panel yet
-- [ ] No image EXIF stripping before serving (privacy — camera GPS data)
-- [ ] Tailscale not yet set up for remote access
-- [ ] No auth on admin panel (safe for now since it's LAN-only, but needed before any public exposure)
-- [ ] `scripts/initial-commit.sh` can be deleted now that history is clean
+- [ ] Cloudflare Tunnel not yet set up (next priority)
+- [ ] Cloudflare Access not yet set up (must happen before tunnel goes live)
+- [ ] GitHub deploy key on Mac Mini (scoped to this repo only)
+- [ ] Admin photo thumbnails don't load in detail view — needs investigation
+- [ ] No drag-to-reorder photos yet
+- [ ] No EXIF stripping (camera GPS data) — Sharp can do this, just not wired up
+- [ ] `scripts/initial-commit.sh` can be deleted
+- [ ] Decide: serve site from Mac Mini via Caddy, or keep Cloudflare Pages? (Currently both exist)
+
+---
+
+## Deployment options (decision pending)
+
+Two valid approaches — pick one and remove the other:
+
+**Option A — Mac Mini serves everything (preferred)**
+- Caddy serves `site/public/` via Cloudflare Tunnel
+- Hugo rebuilds locally when admin hits "Rebuild"
+- No Cloudflare Pages needed
+- Photos never leave the Mac Mini (no GitHub file size limits)
+
+**Option B — Cloudflare Pages serves the gallery**
+- CF Pages builds Hugo on every `git push`
+- Mac Mini only runs the admin panel
+- Photos go through GitHub (25 MiB per file limit — Sharp normalisation handles this)
+- Currently connected to the repo but not the active serving method
 
 ---
 
@@ -196,23 +237,24 @@ This is the first place to look when something breaks.
 |---|---|
 | New features, redesigns, architecture decisions | **Cowork** |
 | Live dev loop: template edits, CSS tweaks, Hugo debugging | **Claude Code** in terminal |
-| Upload photos, manage series while traveling | **Admin panel** at :3001 |
+| Upload photos, manage series | **Admin panel** at :3001 |
 | Git commits, running scripts, installing packages | **Claude Code** |
 | Updating this CLAUDE.md | Whoever makes the change |
 
-**Important:** Both tools share the same repo directory. Don't run both simultaneously with git operations — one will lock the other out (the `.git/index.lock` problem). Close whichever isn't actively being used for git work.
+**Important:** Don't run both Cowork and Claude Code with git operations simultaneously — `.git/index.lock` conflict.
 
 ---
 
 ## Current state (last updated: 2026-05-07)
 
 - Hugo site scaffolded, custom theme built, Tailwind wired up
-- Admin panel running at :3001 with full request/error logging to `logs/admin.log`
-- Generated CSS (`site/static/css/style.css`) is committed — no more missing stylesheet on cold start
-- Cover photo lookup bug fixed in homepage template
-- Upload limit raised to 300 MB per file
-- Sample series "Pictures" has 2 real photos (`_CTS2746.png`, `_CTS3942.png`)
-- Second series `test-2026` created via admin panel
-- Git history is clean, pushed to GitHub
+- Admin panel running at :3001 — catalog/monospace aesthetic (US Graphics inspired)
+- Admin panel logs to `logs/admin.log`
+- Photos normalised to JPEG on upload via Sharp (max 4000px, q88)
+- Draft field fixed to write proper YAML booleans
+- `baseURL = "/"` set for portability
+- `POST /api/deploy` endpoint added — commits content + pushes to GitHub
+- Cloudflare Pages connected to repo (builds on push) — first deploy blocked by large PNG files, now removed from repo
+- Large source photos removed from repo — re-upload via admin after Mac Mini is set up
 - Mac Mini deployment not yet attempted
-- Tailscale not yet set up
+- Cloudflare Tunnel + Access not yet set up
