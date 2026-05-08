@@ -165,6 +165,20 @@ Photos are sorted **alphabetically by filename** in the gallery. Name them accor
 
 ---
 
+## Logging
+
+The admin panel writes timestamped logs to `logs/admin.log` (gitignored, auto-created).
+Every request, rebuild, file write, and error is captured there.
+
+To watch live:
+```bash
+tail -f logs/admin.log
+```
+
+This is the first place to look when something breaks.
+
+---
+
 ## Known issues / TODO
 
 - [ ] Admin photo thumbnails don't load (CSS `object-fit` on broken img tags — needs investigation)
@@ -193,9 +207,12 @@ Photos are sorted **alphabetically by filename** in the gallery. Name them accor
 ## Current state (last updated: 2026-05-07)
 
 - Hugo site scaffolded, custom theme built, Tailwind wired up
-- Admin panel running at :3001
+- Admin panel running at :3001 with full request/error logging to `logs/admin.log`
+- Generated CSS (`site/static/css/style.css`) is committed — no more missing stylesheet on cold start
+- Cover photo lookup bug fixed in homepage template
+- Upload limit raised to 300 MB per file
 - Sample series "Pictures" has 2 real photos (`_CTS2746.png`, `_CTS3942.png`)
 - Second series `test-2026` created via admin panel
-- Git history is clean (6 commits), pushed to GitHub
+- Git history is clean, pushed to GitHub
 - Mac Mini deployment not yet attempted
 - Tailscale not yet set up
