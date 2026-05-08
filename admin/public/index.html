@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Photo Admin</title>
+  <style>
+    /* ── Reset & tokens ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f9f9f8;
+      --surface: #ffffff;
+      --border: #e4e4e2;
+      --text: #111110;
+      --muted: #888884;
+      --accent: #111110;
+      --danger: #dc2626;
+      --green: #16a34a;
+      --radius: 10px;
+      --font: system-ui, -apple-system, sans-serif;
+    }
+    html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+    body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100svh; }
+    button { font-family: inherit; cursor: pointer; border: none; }
+    input, textarea { font-family: inherit; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .app { max-width: 640px; margin: 0 auto; padding: 0 0 80px; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .topbar {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--bg); border-bottom: 1px solid var(--border);
+      padding: 0 16px; height: 52px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .topbar h1 { font-size: 15px; font-weight: 600; letter-spacing: -0.02em; }
+    .topbar-actions { display: flex; gap: 8px; }
+
+    /* ── Buttons ─────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px; border-radius: 8px;
+      font-size: 14px; font-weight: 500;
+      transition: opacity .15s, background .15s;
+    }
+    .btn:active { opacity: .7; }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-ghost:hover { color: var(--text); }
+    .btn-danger { background: #fee2e2; color: var(--danger); }
+    .btn-sm { padding: 6px 10px; font-size: 13px; }
+    .btn-full { width: 100%; justify-content: center; }
+    .btn[disabled] { opacity: .4; pointer-events: none; }
+
+    /* ── Toast ──────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px);
+      background: var(--text); color: #fff;
+      padding: 10px 18px; border-radius: 8px; font-size: 13px;
+      opacity: 0; transition: all .25s; pointer-events: none; white-space: nowrap;
+      z-index: 999;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.error { background: var(--danger); }
+
+    /* ── Section: project list ──────────────────────────────── */
+    .section { padding: 16px; }
+    .section-title { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+
+    .project-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .project-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      display: flex; align-items: stretch;
+    }
+    .project-card-thumb {
+      width: 72px; min-height: 72px; flex-shrink: 0;
+      background: var(--bg); object-fit: cover;
+    }
+    .project-card-thumb.empty { display: flex; align-items: center; justify-content: center; color: var(--border); font-size: 24px; }
+    .project-card-body { flex: 1; padding: 12px 14px; display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }
+    .project-card-title { font-size: 14px; font-weight: 600; letter-spacing: -0.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .project-card-meta { font-size: 12px; color: var(--muted); }
+    .project-card-badges { display: flex; gap: 6px; margin-top: 4px; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 99px; font-size: 11px; font-weight: 500; }
+    .badge-draft { background: #fef3c7; color: #92400e; }
+    .badge-live  { background: #dcfce7; color: #166534; }
+    .project-card-actions { padding: 0 12px 0 0; display: flex; align-items: center; }
+
+    /* ── Modal overlay ──────────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.45); backdrop-filter: blur(2px);
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .overlay.hidden { display: none; }
+    .sheet {
+      background: var(--surface); border-radius: 18px 18px 0 0;
+      width: 100%; max-width: 640px; max-height: 90svh;
+      overflow-y: auto; padding: 0 0 40px;
+    }
+    .sheet-handle { width: 36px; height: 4px; background: var(--border); border-radius: 2px; margin: 12px auto 0; }
+    .sheet-header { padding: 16px 20px 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .sheet-title { font-size: 16px; font-weight: 600; letter-spacing: -0.02em; }
+    .sheet-close { background: var(--bg); border-radius: 50%; width: 28px; height: 28px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: var(--muted); cursor: pointer; border: none; font-family: inherit; }
+    .sheet-body { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Form fields ─────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 6px; }
+    .field label { font-size: 13px; font-weight: 500; color: var(--muted); }
+    .field input, .field textarea {
+      padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+      font-size: 15px; background: var(--surface); color: var(--text);
+      width: 100%;
+    }
+    .field input:focus, .field textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+    .field textarea { min-height: 80px; resize: vertical; }
+
+    /* ── Upload zone ─────────────────────────────────────────── */
+    .upload-zone {
+      border: 2px dashed var(--border); border-radius: 10px;
+      padding: 32px 16px; text-align: center;
+      transition: border-color .2s, background .2s;
+      cursor: pointer;
+    }
+    .upload-zone.drag { border-color: var(--accent); background: #f0f0ef; }
+    .upload-zone p { font-size: 14px; color: var(--muted); margin-top: 6px; }
+    .upload-zone strong { font-size: 15px; font-weight: 600; color: var(--text); }
+
+    /* ── Photo thumbnails in project detail ─────────────────── */
+    .photo-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    .photo-thumb { position: relative; aspect-ratio: 1; background: var(--bg); border-radius: 6px; overflow: hidden; }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-thumb-del {
+      position: absolute; top: 4px; right: 4px;
+      background: rgba(0,0,0,.55); color: #fff; border: none;
+      width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; cursor: pointer; opacity: 0; transition: opacity .15s;
+    }
+    .photo-thumb:hover .photo-thumb-del { opacity: 1; }
+
+    /* ── Rebuild banner ──────────────────────────────────────── */
+    .rebuild-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: var(--surface); border-top: 1px solid var(--border);
+      padding: 12px 16px; display: flex; align-items: center; gap: 10px;
+    }
+    .rebuild-bar span { font-size: 13px; color: var(--muted); flex: 1; }
+    .rebuild-indicator { width: 8px; height: 8px; border-radius: 50%; background: #fbbf24; flex-shrink: 0; }
+    .rebuild-indicator.idle { background: var(--green); }
+
+    /* ── Spinner ─────────────────────────────────────────────── */
+    .spin { animation: spin .7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty state ─────────────────────────────────────────── */
+    .empty { text-align: center; padding: 48px 24px; color: var(--muted); font-size: 14px; }
+    .empty strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Top bar -->
+  <div class="topbar">
+    <h1>📷 Photo Admin</h1>
+    <div class="topbar-actions">
+      <button class="btn btn-ghost btn-sm" id="btn-rebuild" onclick="rebuild()">
+        <span id="rebuild-icon">↻</span> Rebuild
+      </button>
+      <button class="btn btn-primary btn-sm" onclick="openNewProject()">+ Series</button>
+    </div>
+  </div>
+
+  <!-- Project list -->
+  <div class="section">
+    <div class="section-title">Your Series</div>
+    <div class="project-list" id="project-list">
+      <div class="empty"><strong>Loading…</strong></div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Rebuild indicator bar -->
+<div class="rebuild-bar">
+  <div class="rebuild-indicator idle" id="rebuild-dot"></div>
+  <span id="rebuild-status">Site up to date</span>
+</div>
+
+<!-- ── New project sheet ──────────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-new" onclick="closeIfBackdrop(event,'overlay-new')">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <span class="sheet-title">New Series</span>
+      <button class="sheet-close" onclick="close('overlay-new')">✕</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" id="new-title" placeholder="e.g. Iceland 2025" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea id="new-desc" placeholder="A short description shown on the project page…"></textarea>
+      </div>
+      <button class="btn btn-primary btn-full" onclick="createProject()">Create series</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Project detail sheet ──────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-detail" onclick="closeIfBackdrop(event,'overlay-detail')">
+  <div class="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-header">
+      <span class="sheet-title" id="detail-title">—</span>
+      <button class="sheet-close" onclick="close('overlay-detail')">✕</button>
+    </div>
+    <div class="sheet-body" id="detail-body"><!-- filled dynamically --></div>
+  </div>
+</div>
+
+<!-- ── Toast ─────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+// ── State ───────────────────────────────────────────────────────
+let projects = [];
+let dirty = false; // unsaved rebuild needed
+
+// ── Init ────────────────────────────────────────────────────────
+loadProjects();
+
+// ── API helpers ─────────────────────────────────────────────────
+async function api(method, path, body, isForm) {
+  const opts = { method };
+  if (body && !isForm) {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  } else if (isForm) {
+    opts.body = body; // FormData
+  }
+  const res = await fetch('/api' + path, opts);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
+}
+
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.className = '', 2800);
+}
+
+// ── Projects list ────────────────────────────────────────────────
+async function loadProjects() {
+  projects = await api('GET', '/projects');
+  renderList();
+}
+
+function renderList() {
+  const el = document.getElementById('project-list');
+  if (!projects.length) {
+    el.innerHTML = `<div class="empty"><strong>No series yet</strong>Tap "+ Series" to create your first one.</div>`;
+    return;
+  }
+  el.innerHTML = projects.map(p => `
+    <div class="project-card" onclick="openDetail('${p.slug}')">
+      <div class="project-card-thumb empty">🖼</div>
+      <div class="project-card-body">
+        <div class="project-card-title">${esc(p.title)}</div>
+        <div class="project-card-meta">${p.photoCount} photo${p.photoCount !== 1 ? 's' : ''}${p.date ? ' · ' + p.date.slice(0,4) : ''}</div>
+        <div class="project-card-badges">
+          <span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span>
+        </div>
+      </div>
+      <div class="project-card-actions">
+        <span style="color:var(--muted);font-size:18px">›</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ── New project ──────────────────────────────────────────────────
+function openNewProject() {
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-desc').value = '';
+  open('overlay-new');
+  setTimeout(() => document.getElementById('new-title').focus(), 200);
+}
+
+async function createProject() {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { toast('Title is required', true); return; }
+  try {
+    await api('POST', '/projects', { title, description: document.getElementById('new-desc').value.trim() });
+    close('overlay-new');
+    await loadProjects();
+    setDirty();
+    toast(`"${title}" created`);
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Project detail ───────────────────────────────────────────────
+async function openDetail(slug) {
+  const p = projects.find(x => x.slug === slug);
+  if (!p) return;
+  document.getElementById('detail-title').textContent = p.title;
+  document.getElementById('detail-body').innerHTML = `<div class="empty"><strong>Loading…</strong></div>`;
+  open('overlay-detail');
+
+  const photos = await api('GET', `/projects/${slug}/photos`);
+  renderDetail(p, photos);
+}
+
+function renderDetail(p, photos) {
+  const body = document.getElementById('detail-body');
+  body.innerHTML = `
+    <!-- Photos -->
+    <div>
+      <div class="section-title">Photos (${photos.length})</div>
+      ${photos.length ? `
+        <div class="photo-grid" id="photo-grid-${p.slug}">
+          ${photos.map(f => `
+            <div class="photo-thumb" id="thumb-${p.slug}-${esc(f)}">
+              <img src="/photos/${p.slug}/${esc(f)}" loading="lazy" onerror="this.style.display='none'">
+              <button class="photo-thumb-del" onclick="deletePhoto('${p.slug}','${esc(f)}',event)" title="Delete">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      ` : `<p style="font-size:13px;color:var(--muted);margin-bottom:8px">No photos yet.</p>`}
+    </div>
+
+    <!-- Upload zone -->
+    <div class="upload-zone" id="drop-zone-${p.slug}"
+         onclick="document.getElementById('file-input-${p.slug}').click()"
+         ondragover="dragOver(event,this)" ondragleave="dragLeave(this)" ondrop="dropFiles(event,'${p.slug}',this)">
+      <strong>Add photos</strong>
+      <p>Tap to choose · or drag & drop</p>
+      <input type="file" id="file-input-${p.slug}" accept="image/*" multiple style="display:none"
+             onchange="uploadFiles(this.files,'${p.slug}')">
+    </div>
+
+    <!-- Metadata -->
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="edit-title-${p.slug}" value="${esc(p.title)}">
+    </div>
+    <div class="field">
+      <label>Description</label>
+      <textarea id="edit-desc-${p.slug}">${esc(p.description)}</textarea>
+    </div>
+    <button class="btn btn-ghost btn-full" onclick="saveMetadata('${p.slug}')">Save details</button>
+
+    <!-- Publish / unpublish -->
+    <button class="btn btn-full ${p.draft ? 'btn-primary' : 'btn-danger'}"
+            onclick="togglePublish('${p.slug}', ${p.draft})">
+      ${p.draft ? '🌐 Publish this series' : '⬇ Unpublish (move to draft)'}
+    </button>
+  `;
+}
+
+async function deletePhoto(slug, filename, e) {
+  e.stopPropagation();
+  if (!confirm(`Delete ${filename}?`)) return;
+  await api('DELETE', `/projects/${slug}/photos/${filename}`);
+  document.getElementById(`thumb-${slug}-${filename}`)?.remove();
+  setDirty();
+  toast('Photo deleted');
+}
+
+async function uploadFiles(files, slug) {
+  if (!files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append('photos', f);
+  const btn = document.querySelector(`#drop-zone-${slug}`);
+  btn.innerHTML = `<strong><span class="spin">↻</span> Uploading ${files.length} file${files.length>1?'s':''}…</strong>`;
+  try {
+    const res = await api('POST', `/projects/${slug}/photos`, fd, true);
+    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length>1?'s':''}`);
+    setDirty();
+    const p = projects.find(x => x.slug === slug);
+    const photos = await api('GET', `/projects/${slug}/photos`);
+    renderDetail(p, photos);
+  } catch(e) { toast(e.message, true); }
+}
+
+function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
+function dragLeave(el) { el.classList.remove('drag'); }
+function dropFiles(e, slug, el) {
+  e.preventDefault(); el.classList.remove('drag');
+  uploadFiles(e.dataTransfer.files, slug);
+}
+
+async function saveMetadata(slug) {
+  const title = document.getElementById(`edit-title-${slug}`).value.trim();
+  const description = document.getElementById(`edit-desc-${slug}`).value.trim();
+  await api('PATCH', `/projects/${slug}`, { title, description });
+  await loadProjects();
+  setDirty();
+  toast('Saved');
+}
+
+async function togglePublish(slug, isDraft) {
+  await api('POST', `/projects/${slug}/publish`, { draft: !isDraft });
+  await loadProjects();
+  setDirty();
+  close('overlay-detail');
+  toast(isDraft ? '🌐 Published!' : 'Moved to draft');
+}
+
+// ── Rebuild ──────────────────────────────────────────────────────
+function setDirty() {
+  dirty = true;
+  document.getElementById('rebuild-dot').classList.remove('idle');
+  document.getElementById('rebuild-status').textContent = 'Rebuild needed to see changes';
+}
+
+async function rebuild() {
+  const icon = document.getElementById('rebuild-icon');
+  icon.className = 'spin'; icon.textContent = '↻';
+  document.getElementById('btn-rebuild').disabled = true;
+  document.getElementById('rebuild-status').textContent = 'Building…';
+  try {
+    await api('POST', '/rebuild');
+    dirty = false;
+    document.getElementById('rebuild-dot').classList.add('idle');
+    document.getElementById('rebuild-status').textContent = 'Site rebuilt ✓';
+    toast('Site rebuilt successfully!');
+  } catch(e) {
+    toast('Build failed: ' + e.message, true);
+    document.getElementById('rebuild-status').textContent = 'Build failed';
+  }
+  icon.className = ''; icon.textContent = '↻';
+  document.getElementById('btn-rebuild').disabled = false;
+}
+
+// ── Modal helpers ────────────────────────────────────────────────
+function open(id) { document.getElementById(id).classList.remove('hidden'); document.body.style.overflow='hidden'; }
+function close(id) { document.getElementById(id).classList.add('hidden'); document.body.style.overflow=''; }
+function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) close(id); }
+
+// ── Util ─────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Keyboard close
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['overlay-detail','overlay-new'].forEach(id => {
+      if (!document.getElementById(id).classList.contains('hidden')) close(id);
+    });
+  }
+});
+</script>
+
+<!-- Serve photos directly from Hugo content dir -->
+<!-- (The server handles this via a static route — see server.js) -->
+</body>
+</html>
