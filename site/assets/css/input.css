@@ -1,0 +1,24 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  img {
+    display: block;
+  }
+}
+
+@layer components {
+  /* Project card cover — bg-image set inline by Hugo */
+  .project-thumb {
+    @apply w-full h-full bg-cover bg-center transition-transform duration-400 group-hover:scale-103;
+  }
+}
+
+@layer utilities {
+  /* PhotoSwipe dark backdrop */
+  .pswp { --pswp-bg: #0c0c0c; }
+}
