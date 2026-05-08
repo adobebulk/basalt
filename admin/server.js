@@ -133,7 +133,7 @@ fs.mkdirSync(UPLOAD_TMP, { recursive: true });
 
 const upload = multer({
   dest: UPLOAD_TMP,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50 MB per file
+  limits: { fileSize: 300 * 1024 * 1024 }, // 300 MB per file
   fileFilter(_, file, cb) {
     cb(null, /\.(jpe?g|png|webp|avif)$/i.test(file.originalname));
   },

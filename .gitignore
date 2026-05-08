@@ -4,9 +4,6 @@ site/resources/
 site/.hugo_build.lock
 site/hugo_stats.json
 
-# Generated CSS (built by Tailwind CLI — run `npm run css:build`)
-site/static/css/style.css
-
 # Node
 node_modules/
 admin/node_modules/

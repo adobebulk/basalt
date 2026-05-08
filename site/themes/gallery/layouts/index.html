@@ -10,8 +10,9 @@
       {{- range sort $projects "Date" "desc" -}}
         {{- $images := .Resources.ByType "image" -}}
         {{- $cover  := index $images 0 -}}
-        {{- with .Params.cover -}}
-          {{- $c := $.Resources.GetMatch . -}}
+        {{- $coverName := .Params.cover -}}
+        {{- if $coverName -}}
+          {{- $c := .Resources.GetMatch $coverName -}}
           {{- if $c }}{{ $cover = $c }}{{ end -}}
         {{- end -}}
 
