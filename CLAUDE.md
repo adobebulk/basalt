@@ -98,26 +98,22 @@ static-photos/
 ## Key commands
 
 ```bash
-# Install all dependencies (run once after cloning)
-npm install && cd admin && npm install && cd ..
+# Server account — one-time setup (installs everything, starts all services at boot)
+bash scripts/setup.sh
 
-# Dev mode — Tailwind watch + Hugo server together
-npm run dev
-# → gallery at http://localhost:1313
-
-# Admin panel (separate terminal)
-node admin/server.js
-# → admin at http://localhost:3001
-
-# Production build (CSS + Hugo minified)
-npm run build
-
-# Quick rebuild (useful after manual edits)
+# Quick rebuild after content or template changes (CSS + Hugo, safe to run anytime)
 bash scripts/rebuild.sh
 
-# Mac Mini first-time setup
-bash scripts/setup.sh
+# Dev on your laptop (two terminals, or use npm run dev which runs both)
+npm run dev              # Tailwind watch + Hugo server → http://localhost:1313
+node admin/server.js     # Admin panel → http://localhost:3001
+
+# Production build only
+npm run build
 ```
+
+**On the server account, nothing needs to be run after setup.**
+Caddy, the admin panel, and the Cloudflare Tunnel all start at boot via launchd.
 
 ---
 
@@ -202,14 +198,14 @@ The Mac Mini runs the server on a **restricted user account** that only has acce
 
 ## Known issues / TODO
 
-- [ ] Cloudflare Tunnel not yet set up (next priority)
-- [ ] Cloudflare Access not yet set up (must happen before tunnel goes live)
+- [ ] Run `bash scripts/setup.sh` on the server account (next step)
+- [ ] Set up Cloudflare Access in Zero Trust dashboard to gate /admin and /api paths
 - [ ] GitHub deploy key on Mac Mini (scoped to this repo only)
 - [ ] Admin photo thumbnails don't load in detail view — needs investigation
 - [ ] No drag-to-reorder photos yet
 - [ ] No EXIF stripping (camera GPS data) — Sharp can do this, just not wired up
 - [ ] `scripts/initial-commit.sh` can be deleted
-- [ ] Decide: serve site from Mac Mini via Caddy, or keep Cloudflare Pages? (Currently both exist)
+- [ ] Remove Cloudflare Pages connection once Mac Mini is serving live (Option A confirmed)
 
 ---
 
@@ -245,7 +241,7 @@ Two valid approaches — pick one and remove the other:
 
 ---
 
-## Current state (last updated: 2026-05-07)
+## Current state (last updated: 2026-05-08)
 
 - Hugo site scaffolded, custom theme built, Tailwind wired up
 - Admin panel running at :3001 — catalog/monospace aesthetic (US Graphics inspired)
@@ -254,7 +250,9 @@ Two valid approaches — pick one and remove the other:
 - Draft field fixed to write proper YAML booleans
 - `baseURL = "/"` set for portability
 - `POST /api/deploy` endpoint added — commits content + pushes to GitHub
-- Cloudflare Pages connected to repo (builds on push) — first deploy blocked by large PNG files, now removed from repo
-- Large source photos removed from repo — re-upload via admin after Mac Mini is set up
-- Mac Mini deployment not yet attempted
-- Cloudflare Tunnel + Access not yet set up
+- Cloudflare Pages connected to repo (builds on push) — kept for reference, Option A preferred
+- Large source photos removed from repo — re-upload via admin after Mac Mini server account is set up
+- **Caddyfile updated** — routes /admin/* → admin panel (prefix stripped), /api/* and /photos/* → admin panel, everything else → Hugo static files
+- **setup.sh rewritten** — single script: installs deps, builds site, cloudflared auth + tunnel + DNS, three launchd services (Caddy, admin panel, cloudflared tunnel), boots clean from that point on
+- URLs: `photos.ctsmith.org` (gallery), `photos.ctsmith.org/admin` (admin, gated by CF Access)
+- Mac Mini server account setup not yet run

@@ -1,42 +1,51 @@
 # ─── Caddyfile ────────────────────────────────────────────────────────────────
-# Serves the static Hugo site on port 80/443 and proxies the admin panel.
+# Listens on :80 (localhost only — Cloudflare Tunnel handles public HTTPS).
 #
-# Usage on Mac Mini:
-#   brew install caddy
-#   sudo caddy run --config /path/to/repo/Caddyfile
+# Routing:
+#   photos.ctsmith.org/admin  → admin panel on :3001 (Cloudflare Access gates this)
+#   photos.ctsmith.org/api/*  → admin panel on :3001 (API calls from admin UI)
+#   photos.ctsmith.org/photos/* → admin panel on :3001 (photo preview in admin UI)
+#   everything else           → Hugo static site in site/public/
 #
-# For LAN-only use (no public domain), keep the :80 block.
-# When you're ready to go public, replace :80 with your domain name
-# and Caddy will auto-provision a Let's Encrypt TLS certificate.
+# REPO_ROOT env var is set by the launchd plist (or export it manually for testing).
 
-# ─── Public gallery ──────────────────────────────────────────────────────────
 :80 {
-  root * {$REPO_ROOT}/site/public
-  file_server
 
-  # Clean URLs: /iceland → /iceland/index.html
-  try_files {path} {path}/ {path}/index.html
+  # ── Admin UI ──────────────────────────────────────────────────────────────
+  # Redirect bare /admin to /admin/ so relative paths in the UI work correctly
+  redir /admin /admin/ 308
 
-  # Compression
-  encode gzip
+  # Strip /admin prefix before proxying — admin panel sees / as its root
+  handle_path /admin/* {
+    reverse_proxy localhost:3001
+  }
 
-  # Cache images aggressively (Hugo fingerprints them)
-  @images path *.jpg *.jpeg *.png *.webp *.avif *.gif *.ico *.svg
-  header @images Cache-Control "public, max-age=31536000, immutable"
+  # ── Admin API + photo preview (called root-relative by the admin UI JS) ───
+  handle /api/* {
+    reverse_proxy localhost:3001
+  }
+  handle /photos/* {
+    reverse_proxy localhost:3001
+  }
 
-  # Shorter cache for HTML
-  @html path *.html /
-  header @html Cache-Control "public, max-age=300"
+  # ── Public gallery ────────────────────────────────────────────────────────
+  handle {
+    root * {$REPO_ROOT}/site/public
+    file_server
+
+    # Clean URLs: /iceland → /iceland/index.html
+    try_files {path} {path}/ {path}/index.html
+
+    # Compression
+    encode gzip
+
+    # Cache images aggressively (Hugo fingerprints them)
+    @images path *.jpg *.jpeg *.png *.webp *.avif *.gif *.ico *.svg
+    header @images Cache-Control "public, max-age=31536000, immutable"
+
+    # Shorter cache for HTML
+    @html path *.html /
+    header @html Cache-Control "public, max-age=300"
+  }
+
 }
-
-# ─── Admin panel (LAN only) ──────────────────────────────────────────────────
-# Accessible at http://<mac-mini-ip>:3001 directly (Node listens there).
-# If you want Caddy to front it (e.g. for a nicer URL or auth), uncomment:
-#
-# :3002 {
-#   reverse_proxy localhost:3001
-#   basicauth {
-#     # Generate hash: caddy hash-password --plaintext yourpassword
-#     admin $2a$14$...
-#   }
-# }
