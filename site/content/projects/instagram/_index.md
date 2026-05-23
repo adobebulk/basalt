@@ -22,7 +22,7 @@ photos:
     key: instagram/003
     width: 2456
     height: 1773
-    caption: ''
+    caption: Bixby
     downloadable: false
     body: Bixby Creek Bridge in Big Sur
   - id: '004'
@@ -152,3 +152,4 @@ photos:
     caption: ''
     downloadable: false
 ---
+
