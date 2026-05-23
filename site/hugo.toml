@@ -1,7 +1,7 @@
 baseURL = "https://photos.ctsmith.org/"
 locale = "en-us"
 title = "Photos"
-theme = "gallery"
+theme = "basalt"
 
 [params]
   photographer = "Your Name"

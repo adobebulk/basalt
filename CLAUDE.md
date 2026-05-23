@@ -2,6 +2,9 @@
 
 Context file for both Cowork and Claude Code. Keep this up to date as the project evolves.
 
+> **Basalt fork:** This repo is the basis for the Basalt CMS. See `BASALT.md` for
+> Basalt-specific context. The architecture documented here is shared between both projects.
+
 > **Architecture redesigned 2026-05-21, single-host decision 2026-05-22.** The project moved from a Mac-Mini-as-hub model to a **decoupled (Jamstack) architecture**: build the site from code, store the heavy assets in object storage, run the admin as serverless code. Everything is served from **one hostname** (`photos.ctsmith.org`) via a single Cloudflare Pages project. Migration is complete — this file is the authoritative working summary.
 
 ---
@@ -90,7 +93,7 @@ static-photos/
 ├── README.md                   ← orientation for developers
 ├── .dev.vars.example           ← copy to .dev.vars for local wrangler dev
 ├── package.json                ← root: Tailwind + dev scripts
-├── tailwind.config.js          ← scans site/themes/gallery/layouts/**
+├── tailwind.config.js          ← scans site/themes/basalt/layouts/**
 ├── wrangler.toml               ← Pages project config + R2 bindings
 ├── functions/                  ← Cloudflare Pages Functions
 │   ├── _lib/
@@ -150,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.3**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.1.0**
 
 ---
 
@@ -311,7 +314,13 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-05-23)
 
-### v1.2.3 — CURRENT
+### v0.1.0 — CURRENT (Basalt fork)
+- Forked from static-photos v1.2.3
+- Renamed package to `basalt`, theme to `basalt`
+- Added static-photos as upstream git remote for CMS layer fixes
+- All static-photos functionality preserved intact
+
+### v1.2.3
 - Hero image: caption overlay from photo manifest; click always goes to photo permalink (derived from `heroPhotoKey`, not `heroLink`)
 - Photo permalink page: "← Series Title" back link; clicking the photo opens PhotoSwipe (single-item gallery, same pattern as series page); prev/next navigation
 - Admin: feature button on every photo card shows live state ("Featured ✓" badge + "Remove" when featured, "✦ Feature" when not); in-place UI update on toggle without panel reload; `panelSettings` cached per panel open; caption helper text below caption input

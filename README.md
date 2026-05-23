@@ -1,10 +1,10 @@
-# static-photos
+# Basalt
 
-A self-hosted photo gallery for an amateur photographer. A fast static Hugo site for visitors, with a private serverless admin panel for managing photos from a phone or laptop — no always-on server.
+A generic Hugo CMS with a serverless admin panel, R2 asset storage, and GitHub-based
+content versioning. Forked from static-photos. Supports photo series with full image
+processing pipeline, text posts, and is designed to add new content types cleanly.
 
-Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **1.2.3**
-
-Content types: **photo series** (grid + lightbox + per-photo permalinks with optional long-form body text) and **text posts** (pure markdown, no photos required). The homepage supports an optional hero image (with caption overlay, linking to the photo's permalink), a curated featured row (series, posts, or individual photos), the full series grid, and a recent posts strip.
+Everything runs on **Cloudflare + GitHub**. Current version: **0.1.0**
 
 ---
 
@@ -90,7 +90,7 @@ The `/api/*` and `/assets/*` routes require real R2 bindings from `.dev.vars`. T
 ## Repo structure
 
 ```
-static-photos/
+basalt/
 ├── functions/
 │   ├── _lib/
 │   │   ├── env.js          central binding/var registry (getEnv helper)
@@ -149,7 +149,7 @@ See **RUNBOOK.md** for full account setup instructions.
 
 - **Site title, nav label, photographer name, description** — admin Settings panel (or edit `site/data/settings.yaml` directly)
 - **Colors / typography** — `site/assets/css/input.css` and `tailwind.config.js`
-- **Templates** — `site/themes/gallery/layouts/`
+- **Templates** — `site/themes/basalt/layouts/`
 
 ---
 
