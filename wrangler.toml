@@ -7,7 +7,6 @@
 
 name = "static-photos"
 compatibility_date = "2025-01-01"
-pages_build_output_dir = "site/public"
 
 [images]
 binding = "IMAGES"
