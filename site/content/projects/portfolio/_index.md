@@ -60,4 +60,10 @@ photos:
     height: 4000
     caption: ''
     downloadable: false
+  - id: '010'
+    key: portfolio/010
+    width: 5813
+    height: 3875
+    caption: ''
+    downloadable: false
 ---
