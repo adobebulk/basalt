@@ -50,15 +50,16 @@ The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflar
 
 ---
 
-## Documentation hygiene
+## Documentation hygiene — ENFORCED
 
-After any significant change — new feature, new API endpoint, architectural decision, major bugfix, or retired component — update the following before committing:
+Every commit that changes behaviour (feature, fix, refactor) **must** include all of the following in the same commit. No exceptions.
 
-1. **README.md** if the change affects setup, running, or understanding the project
-2. **CLAUDE.md** if the change affects architecture, data models, API shape, or the Cowork/Claude Code workflow split
-3. **Delete any files that are no longer in use**
+1. **Version bump** — increment `package.json` version and `wrangler.toml [vars] PACKAGE_VERSION` together (minor bump for features, patch for fixes).
+2. **CLAUDE.md** — update Hugo template notes, data models, API table, known issues, current state, and version number in the Versioning section. If a TODO is done, remove it.
+3. **README.md** — update the version line and any section that describes changed behaviour.
+4. **Delete unused files** — remove any file that is no longer referenced.
 
-This applies to both Cowork sessions (which update docs and prompt Claude Code to clean up) and Claude Code sessions (which should include doc/cleanup steps in the same commit as the feature work).
+This is not optional clean-up. A commit that skips any of these is incomplete. Claude Code sessions must treat docs and versioning as part of the same unit of work as the code change.
 
 ---
 
@@ -149,7 +150,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.0.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.0**
 
 ---
 
@@ -218,9 +219,9 @@ title: "Photos"
 navLabel: "Work"
 photographer: "Your Name"
 description: "A photo gallery"
-heroPhotoKey: ""      # R2 key prefix for homepage hero image; empty = no hero
-heroLink: ""          # optional URL the hero image links to
-featured: []          # ordered list of { type: "series"|"post", slug, label }
+heroPhotoKey: ""      # "<series-slug>/<photo-id>" — parsed at build time to derive caption + permalink
+heroLink: ""          # unused (permalink is always derived from heroPhotoKey); kept for backwards compat
+featured: []          # ordered list of { type: "series"|"post"|"photo", slug, label, photoId? }
 ```
 
 ---
@@ -256,9 +257,11 @@ All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_
 
 - **No build-time image processing.** Templates read the `photos` manifest and emit `srcset` URLs at `{{ .Site.Params.assetsBaseURL }}/<key>/<size>.<fmt>` → `/assets/...` — they do not use `.Resources`, `.Fill`, or `.Resize`.
 - **og:image / twitter:image** must be absolute. `og.html` uses `absURL` on the root-relative asset path to produce `https://photos.ctsmith.org/assets/<key>/1200.jpg`. (Always JPEG, never AVIF — unfurlers don't render AVIF.)
-- **Homepage** (`index.html`): 4 sections — hero (optional, from `settings.heroPhotoKey`), featured row (from `settings.featured`), series grid, recent posts strip.
-- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400). First 6 eager, rest lazy. Photos with a `body` show a "Read" badge.
-- **Per-photo permalink** (`projects/single.html`): `/projects/<slug>/<id>/` with OG tags + prev/next + conditional download link + optional `body` rendered as markdown.
+- **Homepage** (`index.html`): 4 sections — hero, featured row, series grid, recent posts strip.
+  - Hero: `heroPhotoKey` is split on `/` to get `<series-slug>/<photo-id>`; series page is looked up via `site.GetPage` to find the photo's caption; clicking the hero goes to `/projects/<slug>/<id>/` (always derived, never from `heroLink`); caption renders as a gradient overlay if present.
+  - Featured row: supports `type: series`, `post`, or `photo`. Photo type looks up the photo in the series manifest and links to the photo permalink. Recent posts strip deduplicates against featured posts.
+- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400). First 6 eager, rest lazy. Photos with a `body` show a `✦` badge; clicking opens the lightbox; "Full post →" link appears in the lightbox when the current photo has body text.
+- **Per-photo permalink** (`projects/single.html`): `/projects/<slug>/<id>/` — "← Series Title" back link at top; photo is wrapped in a PhotoSwipe anchor (single-item gallery, same CDN and init pattern as series page); prev/next navigation between photos in the series; conditional download link; optional `body` rendered as markdown below.
 - **Posts list** (`posts/list.html`): `/posts/` — published posts with title, date, excerpt.
 - **Post page** (`posts/single.html`): full-width readable layout, `{{ .Content }}` rendered by Hugo.
 - Run Hugo as `hugo --source site` from repo root.
@@ -301,23 +304,31 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Known issues / TODO
 
-- [ ] Admin UI: posts CRUD, homepage hero/featured config (second prompt, not yet done).
-- [ ] Admin UI: drag-to-reorder photos (manifest array order makes this clean).
-- [ ] Keep `site/static/admin/index.html` in sync with `admin/public/index.html` — both are active.
 - [ ] Phase 0: wire Cloudflare/GitHub account bindings for production (see RUNBOOK.md).
+- [ ] Admin UI: drag-to-reorder photos (currently up/down arrows; pointer drag would be smoother).
 
 ---
 
 ## Current state (last updated: 2026-05-23)
 
-### v1.0.0 — COMPLETE (data models, API, Hugo templates)
-- Hugo: manifest-driven templates, per-photo permalinks, no build-time image processing
-- Pages Functions: full admin API (`functions/api/[[route]].js`), R2 asset streaming (`functions/assets/[[path]].js`)
-- Staging layer: all writes stage to `_pending/` in ORIGINALS_BUCKET; `POST /api/rebuild` flushes in one commit
-- Image resizing: Transform via Workers via R2 custom domain (`r2.photos.ctsmith.org`)
-- Site settings: `site/data/settings.yaml` editable via admin Settings panel
-- Admin UI: batch upload with per-photo progress, client-side pre-compression (>30 MB), full CRUD
-- v1.0.0: semantic versioning (package.json → wrangler.toml → site/data/version.yaml); photo body text; text posts content type; homepage hero + featured row + recent posts strip; footer partial with version display
+### v1.2.0 — CURRENT
+- Hero image: caption overlay from photo manifest; click always goes to photo permalink (derived from `heroPhotoKey`, not `heroLink`)
+- Photo permalink page: "← Series Title" back link; clicking the photo opens PhotoSwipe (single-item gallery, same pattern as series page); prev/next navigation
+- Admin: feature button on every photo card shows live state ("Featured ✓" badge + "Remove" when featured, "✦ Feature" when not); in-place UI update on toggle without panel reload; `panelSettings` cached per panel open; caption helper text below caption input
+
+### v1.1.0
+- Lightbox "Full post →" link in PhotoSwipe when current photo has body text (`data-has-body` attribute + `uiRegister` hook)
+- Hero configuration moved from Settings overlay to series detail panel; hero dropdown + Set/Clear buttons
+- Featured `photo` type (single photo card on homepage) with `photoId`; "✦ Feature" shortcut on photo cards
+- Date format standardised to `YYYY-MM-DD` across all templates
+- Mobile CSS: `@media (max-width: 480px)` with 44 px touch targets, stacked layouts, iOS zoom prevention
+
+### v1.0.0
+- Hugo manifest-driven templates, per-photo permalinks, no build-time image processing
+- Pages Functions: full admin API, R2 asset streaming, staging layer (`_pending/`), Transform via Workers via R2 custom domain
+- Semantic versioning (package.json → wrangler.toml → site/data/version.yaml); footer version display
+- Photo body text; text posts content type; homepage hero + featured row + recent posts strip
+- Admin: batch upload, client-side pre-compression, full CRUD, posts tab, settings panel, photo reorder
 
 ### Phase 0 — OPEN (account setup)
 Create ASSETS_BUCKET and ORIGINALS_BUCKET R2 buckets; configure R2 custom domain; configure Pages deploy hook; create Cloudflare Access application gating `/admin*` and `/api*`; create scoped GitHub token; wire all bindings/secrets into the Pages project. See **RUNBOOK.md**.
