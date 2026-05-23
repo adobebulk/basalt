@@ -180,4 +180,10 @@ photos:
     height: 4000
     caption: ''
     downloadable: false
+  - id: '030'
+    key: portfolio/030
+    width: 6000
+    height: 4000
+    caption: ''
+    downloadable: false
 ---
