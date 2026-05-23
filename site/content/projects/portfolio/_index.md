@@ -132,4 +132,10 @@ photos:
     height: 4000
     caption: ''
     downloadable: false
+  - id: '022'
+    key: portfolio/022
+    width: 6000
+    height: 4000
+    caption: ''
+    downloadable: false
 ---
