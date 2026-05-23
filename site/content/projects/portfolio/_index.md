@@ -156,4 +156,10 @@ photos:
     height: 3911
     caption: ''
     downloadable: false
+  - id: '026'
+    key: portfolio/026
+    width: 4869
+    height: 3246
+    caption: ''
+    downloadable: false
 ---
