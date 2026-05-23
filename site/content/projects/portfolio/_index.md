@@ -66,4 +66,10 @@ photos:
     height: 3875
     caption: ''
     downloadable: false
+  - id: '011'
+    key: portfolio/011
+    width: 6000
+    height: 4000
+    caption: ''
+    downloadable: false
 ---
