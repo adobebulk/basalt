@@ -453,6 +453,7 @@ function renderDetail(p, photos) {
       <button class="btn-action" onclick="togglePublish('${p.slug}', ${p.draft})">
         ${p.draft ? 'Publish →' : 'Unpublish →'}
       </button>
+      <button class="btn-danger" onclick="deleteSeries('${p.slug}')">Delete series</button>
     </div>
 
     <!-- Photos -->
@@ -461,9 +462,9 @@ function renderDetail(p, photos) {
         <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Photos</div>
         <div class="photo-grid" id="photo-grid-${p.slug}">
           ${photos.map(f => `
-            <div class="photo-thumb" id="thumb-${p.slug}-${esc(f)}">
-              <img src="/photos/${p.slug}/${esc(f)}" loading="lazy" onerror="this.style.display='none'">
-              <button class="photo-thumb-del" onclick="deletePhoto('${p.slug}','${esc(f)}',event)" title="Delete">✕</button>
+            <div class="photo-thumb" id="thumb-${p.slug}-${esc(f.id)}">
+              <img src="/assets/${esc(f.key)}/600.jpg" loading="lazy" onerror="this.style.display='none'">
+              <button class="photo-thumb-del" onclick="deletePhoto('${p.slug}','${esc(f.id)}',event)" title="Delete">✕</button>
             </div>
           `).join('')}
         </div>
@@ -508,12 +509,18 @@ async function uploadFiles(files, slug) {
   for (const f of files) fd.append('photos', f);
   try {
     const res = await api('POST', `/projects/${slug}/photos`, fd, true);
-    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
+    toast(`Uploaded ${res.added.length} photo${res.added.length > 1 ? 's' : ''}`);
     setRebuildStatus('dirty', 'Rebuild needed');
     const p = projects.find(x => x.slug === slug);
     const photos = await api('GET', `/projects/${slug}/photos`);
     renderDetail(p, photos);
-  } catch(e) { toast(e.message, true); zone.innerHTML = `<strong>Add photos</strong><p>Click to choose files · or drag & drop</p>`; }
+  } catch(e) {
+    toast(e.message || 'Upload failed', true);
+    // Re-render the full detail panel to restore the upload zone with working bindings.
+    const p = projects.find(x => x.slug === slug);
+    const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
+    renderDetail(p, photos);
+  }
 }
 
 function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
@@ -535,6 +542,15 @@ async function togglePublish(slug, isDraft) {
   closeSheet('overlay-detail');
   setRebuildStatus('dirty', 'Rebuild needed');
   toast(isDraft ? 'Published' : 'Moved to draft');
+}
+
+async function deleteSeries(slug) {
+  if (!confirm(`Delete series '${slug}' and all its photos? This cannot be undone.`)) return;
+  await api('DELETE', `/projects/${slug}`);
+  closeSheet('overlay-detail');
+  await loadProjects();
+  setRebuildStatus('dirty', 'Rebuild needed');
+  toast(`Deleted series '${slug}'`);
 }
 
 // ── Rebuild ───────────────────────────────────────────────────────

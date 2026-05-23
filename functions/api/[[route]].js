@@ -53,9 +53,13 @@ const BASE_URL = "https://photos.ctsmith.org";
  * The original must already be in ASSETS_BUCKET before calling this.
  * Strips all metadata (metadata: "none") — no GPS or EXIF in published files.
  * Returns array of { key, buffer, contentType } ready to PUT to R2.
+ *
+ * Same-zone subrequests with cf.image can silently hang, so each fetch is
+ * wrapped with a 25-second AbortController timeout.
  */
 async function generateVariants(slug, id) {
   const originalUrl = `${BASE_URL}/assets/${slug}/${id}/original.jpg`;
+  console.log(`[generateVariants] starting transforms for ${slug}/${id} from ${originalUrl}`);
 
   const jobs = SIZES.flatMap((size) =>
     FORMATS.map(({ format, ext, contentType }) => ({ size, format, ext, contentType }))
@@ -63,21 +67,32 @@ async function generateVariants(slug, id) {
 
   const variants = await Promise.all(
     jobs.map(async ({ size, format, ext, contentType }) => {
-      const res = await fetch(originalUrl, {
-        cf: {
-          image: {
-            width: size,
-            fit: "scale-down",
-            format,
-            metadata: "none",
-          },
-        },
-      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25_000);
 
-      if (!res.ok) {
-        throw new Error(`Image transform failed for ${size}.${ext}: ${res.status}`);
+      let res;
+      try {
+        res = await fetch(originalUrl, {
+          signal: controller.signal,
+          cf: {
+            image: {
+              width: size,
+              fit: "scale-down",
+              format,
+              metadata: "none",
+            },
+          },
+        });
+      } finally {
+        clearTimeout(timer);
       }
 
+      if (!res.ok) {
+        console.error(`[generateVariants] transform HTTP ${res.status} for ${size}.${ext} (${slug}/${id})`);
+        throw new Error(`Image transform failed for ${size}.${ext}: HTTP ${res.status}`);
+      }
+
+      console.log(`[generateVariants] OK ${size}.${ext} (${slug}/${id})`);
       return {
         key: `${slug}/${id}/${size}.${ext}`,
         buffer: await res.arrayBuffer(),
@@ -231,6 +246,7 @@ export async function onRequest(ctx) {
         await env.assetsBucket.put(originalKey, originalBuffer, {
           httpMetadata: { contentType: "image/jpeg" },
         });
+        console.log(`[upload] original PUT to ASSETS_BUCKET OK: ${originalKey}`);
 
         // 2. Generate 6 variants via Transform via Workers (fetch with cf.image).
         //    width/height default to 0 — templates degrade gracefully without them.
@@ -385,6 +401,45 @@ export async function onRequest(ctx) {
       });
 
       return json({ deleted: id });
+    }
+
+    // ── DELETE /api/projects/:slug ───────────────────────────────────────────
+    if (
+      method === "DELETE" &&
+      segments.length === 2 &&
+      segments[0] === "projects"
+    ) {
+      const slug = segments[1];
+
+      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      if (!manifest) return err("series not found", 404);
+
+      const photos = manifest.data.photos ?? [];
+
+      // Delete all R2 objects for every photo (variants in ASSETS_BUCKET + originals in both).
+      for (const photo of photos) {
+        const variantKeys = SIZES.flatMap((s) =>
+          FORMATS.map(({ ext }) => `${slug}/${photo.id}/${s}.${ext}`)
+        );
+        const origKey = `${slug}/${photo.id}/original.jpg`;
+        await env.assetsBucket.delete([...variantKeys, origKey]);
+        await env.originalsBucket.delete(origKey);
+      }
+
+      // Build GitHub deletions: _index.md + all per-photo stubs.
+      const deletions = [
+        indexPath(slug),
+        ...photos.map((photo) => stubPath(slug, photo.id)),
+      ];
+
+      await commitFiles({
+        token: env.githubToken,
+        repo: env.githubRepo,
+        message: `content: delete series ${slug}`,
+        deletions,
+      });
+
+      return json({ deleted: slug });
     }
 
     // ── PATCH /api/projects/:slug ────────────────────────────────────────────
