@@ -34,5 +34,6 @@ export function getEnv(ctx) {
     deployHookUrl:   e.DEPLOY_HOOK_URL,
     cfZoneId:        e.CF_ZONE_ID,       // optional
     cfApiToken:      e.CF_API_TOKEN,     // optional
+    packageVersion:  e.PACKAGE_VERSION,
   };
 }

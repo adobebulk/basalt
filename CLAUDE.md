@@ -147,7 +147,15 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ---
 
-## Series / photo data model
+## Versioning
+
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.0.0**
+
+---
+
+## Data models
+
+### Series / photo manifest
 
 Each series is a Hugo **branch bundle** (`_index.md`) carrying a **manifest** instead of image files (no binaries in git). Each photo additionally gets a tiny stub page `<id>.md` (just `photoid: "<id>"`) so it has its own permalink; all photo data is still read from the manifest (single source of truth):
 
@@ -165,6 +173,8 @@ photos:
     width: 6000              # original pixel dimensions (srcset / lightbox / OG)
     height: 4000
     caption: "Midnight sun over the glacier"
+    body: |                  # optional long-form markdown; shown on per-photo permalink
+      The light at 2am was unlike anything I'd seen.
     downloadable: true       # per-photo override of downloadsDefault
 ---
 ```
@@ -184,6 +194,35 @@ iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 
 **Downloadable originals:** the original lives in ORIGINALS_BUCKET. Marking a photo `downloadable` copies it into ASSETS_BUCKET; un-marking deletes the public copy and purges the CDN cache. No Worker sits in the download path — the original is a plain CDN object once public.
 
+### Text posts
+
+Pure markdown content pages — no photos required. Hugo leaf bundles under `site/content/posts/<slug>/index.md`. All staged to `_pending/` in ORIGINALS_BUCKET like series.
+
+```yaml
+---
+title: "On Shooting in Flat Light"
+date: "2026-05-23"
+draft: false
+featured: false
+excerpt: ""
+---
+Full markdown body here...
+```
+
+Staging helpers in `functions/_lib/staging.js`: `getStagedPostSlugs`, `isStagedPostDeleted`.
+
+### Site settings (`site/data/settings.yaml`)
+
+```yaml
+title: "Photos"
+navLabel: "Work"
+photographer: "Your Name"
+description: "A photo gallery"
+heroPhotoKey: ""      # R2 key prefix for homepage hero image; empty = no hero
+heroLink: ""          # optional URL the hero image links to
+featured: []          # ordered list of { type: "series"|"post", slug, label }
+```
+
 ---
 
 ## Admin API
@@ -194,13 +233,20 @@ iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 | POST | `/api/projects` | Create series `{ title, description }` |
 | GET | `/api/projects/:slug/photos` | List photos in a series |
 | POST | `/api/projects/:slug/photos` | Upload photos → resize → R2 → manifest |
-| PATCH | `/api/projects/:slug/photos/:id` | Edit `{ caption, downloadable }`, reorder |
+| PATCH | `/api/projects/:slug/photos/:id` | Edit `{ caption, body, downloadable }`, reorder |
 | DELETE | `/api/projects/:slug/photos/:id` | Delete a photo (all R2 objects + manifest entry) |
 | PATCH | `/api/projects/:slug` | Update metadata `{ title, description, cover, draft, downloadsDefault }` |
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
 | POST | `/api/rebuild` | Flush staged changes → GitHub commit + ping Pages deploy hook |
 | GET | `/api/settings` | Read `site/data/settings.yaml` |
-| PATCH | `/api/settings` | Update settings |
+| PATCH | `/api/settings` | Update settings (merges; does not wipe missing keys) |
+| GET | `/api/posts` | List all posts (GitHub + staging, exclude staged-deleted) |
+| POST | `/api/posts` | Create post `{ title, body, excerpt, featured }` |
+| GET | `/api/posts/:slug` | Get one post (front matter + body) |
+| PATCH | `/api/posts/:slug` | Update `{ title, body, excerpt, featured, draft }` |
+| DELETE | `/api/posts/:slug` | Delete post |
+| POST | `/api/posts/:slug/publish` | Toggle draft `{ draft: bool }` |
+| GET | `/api/version` | Returns `{ version }` from `PACKAGE_VERSION` env var |
 
 All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_pending/` (ORIGINALS_BUCKET); `POST /api/rebuild` calls `flushStaging()` then pings the deploy hook.
 
@@ -210,9 +256,11 @@ All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_
 
 - **No build-time image processing.** Templates read the `photos` manifest and emit `srcset` URLs at `{{ .Site.Params.assetsBaseURL }}/<key>/<size>.<fmt>` → `/assets/...` — they do not use `.Resources`, `.Fill`, or `.Resize`.
 - **og:image / twitter:image** must be absolute. `og.html` uses `absURL` on the root-relative asset path to produce `https://photos.ctsmith.org/assets/<key>/1200.jpg`. (Always JPEG, never AVIF — unfurlers don't render AVIF.)
-- **Homepage** (`index.html`): lists series via `(site.GetPage "/projects").Sections`; cover = manifest `cover` id → `<key>/600.jpg`; photo count = `len .Params.photos`.
-- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400). First 6 eager, rest lazy.
-- **Per-photo permalink** (`projects/single.html`): `/projects/<slug>/<id>/` with OG tags + prev/next + conditional download link.
+- **Homepage** (`index.html`): 4 sections — hero (optional, from `settings.heroPhotoKey`), featured row (from `settings.featured`), series grid, recent posts strip.
+- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400). First 6 eager, rest lazy. Photos with a `body` show a "Read" badge.
+- **Per-photo permalink** (`projects/single.html`): `/projects/<slug>/<id>/` with OG tags + prev/next + conditional download link + optional `body` rendered as markdown.
+- **Posts list** (`posts/list.html`): `/posts/` — published posts with title, date, excerpt.
+- **Post page** (`posts/single.html`): full-width readable layout, `{{ .Content }}` rendered by Hugo.
 - Run Hugo as `hugo --source site` from repo root.
 
 ---
@@ -253,7 +301,8 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Known issues / TODO
 
-- [ ] **Drag-to-reorder photos** in the admin (manifest array order makes this clean).
+- [ ] Admin UI: posts CRUD, homepage hero/featured config (second prompt, not yet done).
+- [ ] Admin UI: drag-to-reorder photos (manifest array order makes this clean).
 - [ ] Keep `site/static/admin/index.html` in sync with `admin/public/index.html` — both are active.
 - [ ] Phase 0: wire Cloudflare/GitHub account bindings for production (see RUNBOOK.md).
 
@@ -261,13 +310,14 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-05-23)
 
-### Implementation — COMPLETE
+### v1.0.0 — COMPLETE (data models, API, Hugo templates)
 - Hugo: manifest-driven templates, per-photo permalinks, no build-time image processing
 - Pages Functions: full admin API (`functions/api/[[route]].js`), R2 asset streaming (`functions/assets/[[path]].js`)
 - Staging layer: all writes stage to `_pending/` in ORIGINALS_BUCKET; `POST /api/rebuild` flushes in one commit
 - Image resizing: Transform via Workers via R2 custom domain (`r2.photos.ctsmith.org`)
 - Site settings: `site/data/settings.yaml` editable via admin Settings panel
 - Admin UI: batch upload with per-photo progress, client-side pre-compression (>30 MB), full CRUD
+- v1.0.0: semantic versioning (package.json → wrangler.toml → site/data/version.yaml); photo body text; text posts content type; homepage hero + featured row + recent posts strip; footer partial with version display
 
 ### Phase 0 — OPEN (account setup)
 Create ASSETS_BUCKET and ORIGINALS_BUCKET R2 buckets; configure R2 custom domain; configure Pages deploy hook; create Cloudflare Access application gating `/admin*` and `/api*`; create scoped GitHub token; wire all bindings/secrets into the Pages project. See **RUNBOOK.md**.

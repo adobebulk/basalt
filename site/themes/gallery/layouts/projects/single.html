@@ -34,6 +34,12 @@
         {{- end -}}
       </div>
 
+      {{- with $photo.body }}
+      <div class="prose prose-stone max-w-2xl mx-auto mt-8 px-4 text-sm text-stone-600 leading-relaxed">
+        {{ . | markdownify }}
+      </div>
+      {{- end }}
+
       <div class="flex justify-between mt-6 text-sm">
         {{- if gt $idx 0 -}}
           <a href="{{ $series.RelPermalink }}{{ (index $photos (sub $idx 1)).id }}/" class="text-stone-400 hover:text-stone-900 transition-colors">← Prev</a>
@@ -48,8 +54,6 @@
   {{- end -}}
   </main>
 
-  <footer class="px-6 py-4 text-xs text-stone-400 border-t border-stone-200">
-    © {{ now.Year }} {{ .Site.Params.photographer }}
-  </footer>
+  {{ partial "footer.html" . }}
 </body>
 </html>

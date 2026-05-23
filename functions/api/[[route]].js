@@ -23,6 +23,7 @@ import { getFile, listDir, commitFiles } from "../_lib/github.js";
 import {
   stageFile, stageDelete, readStaged,
   getStagedSlugs, isStagedDeleted, flushStaging,
+  getStagedPostSlugs, isStagedPostDeleted,
 } from "../_lib/staging.js";
 import {
   parseFrontMatter,
@@ -184,6 +185,7 @@ async function purgeCache(env, url) {
 
 const indexPath = (slug) => `site/content/projects/${slug}/_index.md`;
 const stubPath = (slug, id) => `site/content/projects/${slug}/${id}.md`;
+const postPath = (slug) => `site/content/posts/${slug}/index.md`;
 const settingsPath = "site/data/settings.yaml";
 
 const DEFAULT_SETTINGS = {
@@ -191,6 +193,9 @@ const DEFAULT_SETTINGS = {
   navLabel: "Work",
   photographer: "Your Name",
   description: "A photo gallery",
+  heroPhotoKey: "",
+  heroLink: "",
+  featured: [],
 };
 
 async function readManifest(env, slug) {
@@ -374,6 +379,7 @@ export async function onRequest(ctx) {
       const updated = { ...prev };
 
       if (body.caption !== undefined) updated.caption = body.caption;
+      if (body.body    !== undefined) updated.body    = body.body || undefined;
 
       // Handle downloadable toggle: copy-to-public or delete-from-public
       if (body.downloadable !== undefined && body.downloadable !== prev.downloadable) {
@@ -587,13 +593,147 @@ export async function onRequest(ctx) {
         async (p) => getFile(env.githubToken, env.githubRepo, p)
       );
       const current = result ? (yaml.load(result.content) ?? {}) : {};
-      const allowedKeys = ["title", "navLabel", "photographer", "description"];
+      const allowedKeys = ["title", "navLabel", "photographer", "description", "heroPhotoKey", "heroLink", "featured"];
       const updated = { ...DEFAULT_SETTINGS, ...current };
       for (const k of allowedKeys) {
         if (body[k] !== undefined) updated[k] = body[k];
       }
       await stageFile(env.stagingBucket, settingsPath, yaml.dump(updated, { lineWidth: -1 }));
       return json(updated);
+    }
+
+    // ── GET /api/version ─────────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "version") {
+      return json({ version: env.packageVersion ?? "unknown" });
+    }
+
+    // ── GET /api/posts ────────────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "posts") {
+      const entries = await listDir(env.githubToken, env.githubRepo, "site/content/posts");
+      const ghSlugs = entries ? entries.filter((e) => e.type === "dir").map((e) => e.name) : [];
+      const stagedSlugs = await getStagedPostSlugs(env.stagingBucket);
+      const allSlugs = [...new Set([...ghSlugs, ...stagedSlugs])];
+
+      const posts = (await Promise.all(
+        allSlugs.map(async (slug) => {
+          if (await isStagedPostDeleted(env.stagingBucket, slug)) return null;
+          const result = await readStaged(
+            env.stagingBucket,
+            postPath(slug),
+            async (p) => getFile(env.githubToken, env.githubRepo, p)
+          );
+          if (!result) return null;
+          const { data } = parseFrontMatter(result.content);
+          return {
+            slug,
+            title:    data.title    ?? slug,
+            date:     data.date     ?? "",
+            draft:    data.draft    ?? true,
+            featured: data.featured ?? false,
+            excerpt:  data.excerpt  ?? "",
+          };
+        })
+      )).filter(Boolean);
+
+      return json(posts);
+    }
+
+    // ── POST /api/posts ───────────────────────────────────────────────────────
+    if (method === "POST" && segments.length === 1 && segments[0] === "posts") {
+      const { title, body: postBody = "", excerpt = "", featured = false } = await request.json();
+      if (!title) return err("title required");
+
+      const slug = slugify(title);
+      const existing = await readStaged(env.stagingBucket, postPath(slug), null)
+        ?? await getFile(env.githubToken, env.githubRepo, postPath(slug));
+      if (existing) return err("post already exists", 409);
+
+      const data = {
+        title,
+        date: new Date().toISOString().split("T")[0],
+        draft: true,
+        featured,
+        excerpt,
+      };
+      const content = serializeFrontMatter(data, postBody);
+      await stageFile(env.stagingBucket, postPath(slug), content);
+
+      return json({ slug, title, draft: true }, 201);
+    }
+
+    // ── GET /api/posts/:slug ──────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 2 && segments[0] === "posts") {
+      const slug = segments[1];
+      if (await isStagedPostDeleted(env.stagingBucket, slug)) return err("post not found", 404);
+      const result = await readStaged(
+        env.stagingBucket,
+        postPath(slug),
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      if (!result) return err("post not found", 404);
+      const { data, body: postBody } = parseFrontMatter(result.content);
+      return json({ slug, ...data, body: postBody });
+    }
+
+    // ── PATCH /api/posts/:slug ────────────────────────────────────────────────
+    if (method === "PATCH" && segments.length === 2 && segments[0] === "posts") {
+      const slug = segments[1];
+      const updates = await request.json();
+
+      if (await isStagedPostDeleted(env.stagingBucket, slug)) return err("post not found", 404);
+      const result = await readStaged(
+        env.stagingBucket,
+        postPath(slug),
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      if (!result) return err("post not found", 404);
+      const { data, body: postBody } = parseFrontMatter(result.content);
+
+      const updatableFields = ["title", "excerpt", "featured", "draft"];
+      const updatedData = { ...data };
+      for (const f of updatableFields) {
+        if (updates[f] !== undefined) updatedData[f] = updates[f];
+      }
+      const updatedBody = updates.body !== undefined ? updates.body : postBody;
+      const content = serializeFrontMatter(updatedData, updatedBody);
+      await stageFile(env.stagingBucket, postPath(slug), content);
+
+      return json({ slug, ...updatedData, body: updatedBody });
+    }
+
+    // ── DELETE /api/posts/:slug ───────────────────────────────────────────────
+    if (method === "DELETE" && segments.length === 2 && segments[0] === "posts") {
+      const slug = segments[1];
+      const result = await readStaged(
+        env.stagingBucket,
+        postPath(slug),
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      if (!result) return err("post not found", 404);
+      await stageDelete(env.stagingBucket, postPath(slug));
+      return json({ deleted: slug });
+    }
+
+    // ── POST /api/posts/:slug/publish ─────────────────────────────────────────
+    if (
+      method === "POST" &&
+      segments.length === 3 &&
+      segments[0] === "posts" &&
+      segments[2] === "publish"
+    ) {
+      const slug = segments[1];
+      const { draft } = await request.json();
+
+      const result = await readStaged(
+        env.stagingBucket,
+        postPath(slug),
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      if (!result) return err("post not found", 404);
+      const { data, body: postBody } = parseFrontMatter(result.content);
+      const updatedData = { ...data, draft: Boolean(draft) };
+      await stageFile(env.stagingBucket, postPath(slug), serializeFrontMatter(updatedData, postBody));
+      return json({ slug, draft: Boolean(draft) });
     }
 
     // ── 404 ──────────────────────────────────────────────────────────────────

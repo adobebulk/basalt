@@ -4,41 +4,138 @@
 <body class="min-h-screen flex flex-col bg-stone-50 text-stone-900 font-sans">
   {{ partial "header.html" . }}
 
-  <main class="flex-1 p-1.5">
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-      {{- $base := .Site.Params.assetsBaseURL -}}
-      {{- $projects := where (site.GetPage "/projects").Sections "Params.draft" "ne" true -}}
-      {{- range sort $projects "Date" "desc" -}}
-        {{- $photos := .Params.photos -}}
-        {{- $count := len $photos -}}
-        {{- $coverKey := "" -}}
-        {{- $coverID := .Params.cover -}}
-        {{- range $photos -}}
-          {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
-        {{- end -}}
-        {{- if and (eq $coverKey "") (gt $count 0) -}}{{- $coverKey = (index $photos 0).key -}}{{- end -}}
+  {{- $s := .Site.Data.settings -}}
+  {{- $base := .Site.Params.assetsBaseURL -}}
 
-        <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
-          {{- if ne $coverKey "" -}}
-            <div class="project-thumb" style="background-image: url('{{ $base }}/{{ $coverKey }}/600.jpg')"></div>
-          {{- else -}}
-            <div class="w-full h-full bg-stone-200"></div>
-          {{- end -}}
+  <main class="flex-1">
 
-          <div class="absolute inset-0 flex flex-col justify-end p-5
-                      bg-gradient-to-t from-black/60 to-transparent
-                      opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            <span class="text-white text-sm font-semibold tracking-tight leading-snug">{{ .Title }}</span>
-            <span class="text-white/60 text-xs mt-0.5">{{ $count }} photo{{ if ne $count 1 }}s{{ end }}</span>
-          </div>
-        </a>
+    {{/* ── Section 1: Hero ── */}}
+    {{- with $s.heroPhotoKey -}}
+    <section class="relative overflow-hidden" style="aspect-ratio:16/9;max-height:80vh;">
+      <img
+        src="{{ $base }}/{{ . }}/1200.jpg"
+        srcset="{{ $base }}/{{ . }}/600.jpg 600w, {{ $base }}/{{ . }}/1200.jpg 1200w, {{ $base }}/{{ . }}/2400.jpg 2400w"
+        sizes="100vw"
+        class="w-full h-full object-cover"
+        alt=""
+        loading="eager"
+      >
+      {{- with $s.heroLink -}}
+      <a href="{{ . }}" style="position:absolute;inset:0;" aria-label="Hero link"></a>
       {{- end -}}
-    </div>
+    </section>
+    {{- end -}}
+
+    {{/* ── Section 2: Featured row ── */}}
+    {{- if $s.featured -}}
+    <section class="px-6 py-8 border-b border-stone-200">
+      <h2 class="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-4">Featured</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {{- range $s.featured -}}
+          {{- $item := . -}}
+          {{- $label := $item.label -}}
+          {{- if eq $item.type "series" -}}
+            {{- $page := site.GetPage (printf "/projects/%s" $item.slug) -}}
+            {{- with $page -}}
+              {{- if not .Params.draft -}}
+                {{- $coverKey := "" -}}
+                {{- $coverID := .Params.cover -}}
+                {{- range .Params.photos -}}
+                  {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
+                {{- end -}}
+                {{- if and (eq $coverKey "") (gt (len .Params.photos) 0) -}}
+                  {{- $coverKey = (index .Params.photos 0).key -}}
+                {{- end -}}
+                <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
+                  {{- if ne $coverKey "" -}}
+                  <img src="{{ $base }}/{{ $coverKey }}/600.jpg" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102" alt="{{ .Title }}" loading="lazy">
+                  {{- end -}}
+                  <div class="absolute inset-0 flex flex-col justify-end p-4 bg-gradient-to-t from-black/60 to-transparent">
+                    <span class="text-white text-sm font-semibold">{{ if ne $label "" }}{{ $label }}{{ else }}{{ .Title }}{{ end }}</span>
+                    <span class="text-white/60 text-xs mt-0.5">{{ len .Params.photos }} photo{{ if ne (len .Params.photos) 1 }}s{{ end }}</span>
+                  </div>
+                </a>
+              {{- end -}}
+            {{- end -}}
+          {{- else if eq $item.type "post" -}}
+            {{- $page := site.GetPage (printf "/posts/%s" $item.slug) -}}
+            {{- with $page -}}
+              {{- if not .Params.draft -}}
+                <a href="{{ .RelPermalink }}" class="block rounded-sm border border-stone-200 p-5 hover:border-stone-400 transition-colors bg-white group">
+                  <span class="text-sm font-semibold text-stone-800 group-hover:text-stone-900 transition-colors block">{{ if ne $label "" }}{{ $label }}{{ else }}{{ .Title }}{{ end }}</span>
+                  <span class="text-xs text-stone-400 tabular-nums mt-1 block">{{ .Date.Format "Jan 2, 2006" }}</span>
+                  {{- with .Params.excerpt -}}
+                  <p class="mt-2 text-xs text-stone-500 leading-relaxed">{{ . }}</p>
+                  {{- end -}}
+                </a>
+              {{- end -}}
+            {{- end -}}
+          {{- end -}}
+        {{- end -}}
+      </div>
+    </section>
+    {{- end -}}
+
+    {{/* ── Section 3: Series grid ── */}}
+    <section class="p-1.5">
+      {{- $projects := where (site.GetPage "/projects").Sections "Params.draft" "ne" true -}}
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+        {{- range sort $projects "Date" "desc" -}}
+          {{- $photos := .Params.photos -}}
+          {{- $count := len $photos -}}
+          {{- $coverKey := "" -}}
+          {{- $coverID := .Params.cover -}}
+          {{- range $photos -}}
+            {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
+          {{- end -}}
+          {{- if and (eq $coverKey "") (gt $count 0) -}}{{- $coverKey = (index $photos 0).key -}}{{- end -}}
+
+          <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
+            {{- if ne $coverKey "" -}}
+              <div class="project-thumb" style="background-image: url('{{ $base }}/{{ $coverKey }}/600.jpg')"></div>
+            {{- else -}}
+              <div class="w-full h-full bg-stone-200"></div>
+            {{- end -}}
+
+            <div class="absolute inset-0 flex flex-col justify-end p-5
+                        bg-gradient-to-t from-black/60 to-transparent
+                        opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+              <span class="text-white text-sm font-semibold tracking-tight leading-snug">{{ .Title }}</span>
+              <span class="text-white/60 text-xs mt-0.5">{{ $count }} photo{{ if ne $count 1 }}s{{ end }}</span>
+            </div>
+          </a>
+        {{- end -}}
+      </div>
+    </section>
+
+    {{/* ── Section 4: Recent posts ── */}}
+    {{- $postSection := site.GetPage "/posts" -}}
+    {{- if $postSection -}}
+      {{- $recentPosts := first 3 (where $postSection.Pages "Params.draft" "ne" true) -}}
+      {{- if $recentPosts -}}
+      <section class="px-6 py-8 border-t border-stone-200">
+        <h2 class="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-4">
+          <a href="{{ $postSection.RelPermalink }}" class="hover:text-stone-600 transition-colors">Recent posts</a>
+        </h2>
+        <ul class="space-y-4">
+          {{- range $recentPosts -}}
+          <li>
+            <a href="{{ .RelPermalink }}" class="group flex items-baseline gap-3">
+              <span class="text-sm text-stone-700 group-hover:text-stone-900 transition-colors font-medium">{{ .Title }}</span>
+              <span class="text-xs text-stone-400 tabular-nums whitespace-nowrap">{{ .Date.Format "Jan 2, 2006" }}</span>
+              {{- with .Params.excerpt -}}
+              <span class="text-xs text-stone-500 hidden sm:inline truncate">{{ . }}</span>
+              {{- end -}}
+            </a>
+          </li>
+          {{- end -}}
+        </ul>
+      </section>
+      {{- end -}}
+    {{- end -}}
+
   </main>
 
-  {{- $s := .Site.Data.settings -}}
-  <footer class="px-6 py-4 text-xs text-stone-400 border-t border-stone-200">
-    © {{ now.Year }} {{ $s.photographer | default .Site.Params.photographer }}
-  </footer>
+  {{ partial "footer.html" . }}
 </body>
 </html>
