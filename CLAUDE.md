@@ -150,7 +150,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.1**
 
 ---
 
@@ -311,10 +311,11 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-05-23)
 
-### v1.2.0 — CURRENT
+### v1.2.1 — CURRENT
 - Hero image: caption overlay from photo manifest; click always goes to photo permalink (derived from `heroPhotoKey`, not `heroLink`)
 - Photo permalink page: "← Series Title" back link; clicking the photo opens PhotoSwipe (single-item gallery, same pattern as series page); prev/next navigation
 - Admin: feature button on every photo card shows live state ("Featured ✓" badge + "Remove" when featured, "✦ Feature" when not); in-place UI update on toggle without panel reload; `panelSettings` cached per panel open; caption helper text below caption input
+- Fix: `serializeFrontMatter` now emits a blank line between closing `---` and body, so Hugo renders post body as markdown (was missing the blank line separator)
 
 ### v1.1.0
 - Lightbox "Full post →" link in PhotoSwipe when current photo has body text (`data-has-body` attribute + `uiRegister` hook)

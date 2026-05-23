@@ -17,7 +17,7 @@ export function parseFrontMatter(raw) {
 
 /** Serialize front-matter object + optional body back into a Hugo markdown file. */
 export function serializeFrontMatter(data, body = "") {
-  return `---\n${yaml.dump(data, { lineWidth: -1 }).trimEnd()}\n---\n${body}`;
+  return `---\n${yaml.dump(data, { lineWidth: -1 }).trimEnd()}\n---\n\n${body}`;
 }
 
 /** Build a minimal series _index.md for a brand-new series. */

@@ -1,6 +1,6 @@
 {
   "name": "static-photos",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "scripts": {
     "css:build": "tailwindcss -i site/assets/css/input.css -o site/static/css/style.css --minify",
