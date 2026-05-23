@@ -12,4 +12,10 @@ photos:
     height: 0
     caption: ''
     downloadable: false
+  - id: '002'
+    key: testi/002
+    width: 0
+    height: 0
+    caption: ''
+    downloadable: false
 ---
