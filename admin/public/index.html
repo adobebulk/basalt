@@ -333,11 +333,17 @@
     }
     .photo-card-del:hover { color: var(--red); background: var(--red-bg); border-color: #d8a0a0; }
 
-    /* Body section */
+    /* Body / feature section */
     .photo-body-section {
       border-top: 1px solid var(--border-light);
       padding: 6px 8px;
       background: #fafaf9;
+    }
+    .photo-body-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
     }
     .photo-body-toggle {
       font-size: 11px;
@@ -349,6 +355,17 @@
       font-family: var(--mono);
     }
     .photo-body-toggle:hover { text-decoration: underline; }
+    .photo-feature-btn {
+      font-size: 10px;
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--border-light);
+      border-radius: 2px;
+      padding: 2px 6px;
+      font-family: var(--mono);
+    }
+    .photo-feature-btn:hover { color: var(--text); border-color: var(--border); background: #f5f5f4; }
     .photo-body-editor { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
     .photo-body-editor textarea {
       font-family: var(--mono);
@@ -363,6 +380,7 @@
       background: var(--bg);
     }
     .photo-body-editor textarea:focus { outline: none; border-color: var(--green); }
+    .photo-body-actions { display: flex; gap: 6px; flex-wrap: wrap; }
     .hidden { display: none !important; }
 
     /* ── Featured items list (settings) ─────────────────────── */
@@ -373,9 +391,10 @@
       border: 1px solid var(--border-light);
       border-radius: 2px;
       background: #fafaf9;
+      flex-wrap: wrap;
     }
-    .featured-item-label { flex: 1; font-size: 12px; }
-    .featured-add-row { display: flex; gap: 6px; margin-top: 6px; }
+    .featured-item-label { flex: 1; font-size: 12px; min-width: 0; }
+    .featured-add-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
     .featured-add-row select, .featured-add-row input {
       font-family: var(--mono); font-size: 12px;
       padding: 5px 8px;
@@ -383,7 +402,9 @@
       background: var(--bg); color: var(--text);
     }
     .featured-add-row select { width: 90px; flex-shrink: 0; }
-    .featured-add-row input { flex: 1; }
+    .featured-add-row .feat-slug-input { flex: 1; min-width: 80px; }
+    .featured-add-row .feat-photoid-input { width: 80px; flex-shrink: 0; }
+    .featured-add-row .feat-label-input { width: 110px; flex-shrink: 0; }
 
     /* ── Rebuild bar ─────────────────────────────────────────── */
     .rebuild-bar {
@@ -425,8 +446,46 @@
     }
     .post-card-info { flex: 1; display: flex; flex-direction: column; gap: 4px; }
     .post-card-title { font-size: 13px; font-weight: 600; }
-    .post-card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
-    .post-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+    .post-card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .post-card-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
+
+    /* ── Mobile overrides ────────────────────────────────────── */
+    @media (max-width: 480px) {
+      .tab-btn { padding: 12px 20px; flex: 1; text-align: center; }
+
+      /* Touch targets: 44px min height */
+      .btn-action, .btn-outline, .btn-danger { min-height: 44px; display: flex; align-items: center; justify-content: center; }
+      .btn-icon { min-height: 44px; min-width: 44px; justify-content: center; display: flex; align-items: center; }
+      .topbar-nav button { min-height: 44px; padding: 4px 12px; }
+      .sheet-close { min-height: 44px; padding: 4px 12px; }
+
+      /* Post list */
+      .post-card { flex-direction: column; gap: 8px; }
+      .post-card-actions { width: 100%; }
+      .post-card-actions button { flex: 1; min-height: 44px; }
+
+      /* Photo card body actions */
+      .photo-body-actions { gap: 8px; }
+      .photo-body-actions button { flex: 1; min-height: 44px; }
+
+      /* Featured add row */
+      .featured-add-row { flex-direction: column; }
+      .featured-add-row select,
+      .featured-add-row .feat-slug-input,
+      .featured-add-row .feat-photoid-input,
+      .featured-add-row .feat-label-input { width: 100%; flex: none; }
+      .featured-add-row button { min-height: 44px; }
+
+      /* Settings / form */
+      .field input, .field textarea, .field select { font-size: 16px; } /* prevent zoom on iOS */
+
+      /* Post editor body textarea taller on mobile */
+      #post-body { min-height: 200px; }
+
+      /* No horizontal overflow */
+      .page { padding-left: 12px; padding-right: 12px; }
+      .sheet-body { padding: 16px; }
+    }
   </style>
 </head>
 <body>
@@ -544,7 +603,7 @@
         <input type="checkbox" id="post-draft" checked>
         <label for="post-draft">Draft — hide from public site</label>
       </div>
-      <div style="display:flex;gap:8px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn-action" onclick="savePost()">Save post →</button>
         <button class="btn-outline" id="post-delete-btn" onclick="deletePost()" style="display:none">Delete</button>
       </div>
@@ -572,28 +631,20 @@
       <div style="height:1px;background:var(--border-light)"></div>
 
       <div class="field">
-        <label>Hero photo key</label>
-        <input type="text" id="set-hero-key" placeholder="series-slug/001">
-        <span class="field-hint">R2 key prefix for the full-width homepage hero image. Leave blank for no hero.</span>
-      </div>
-      <div class="field">
-        <label>Hero link (optional)</label>
-        <input type="text" id="set-hero-link" placeholder="/projects/iceland-2025/">
-        <span class="field-hint">Where the hero image links to. Leave blank for no link.</span>
-      </div>
-
-      <div class="field">
         <label>Featured items</label>
         <div class="featured-list" id="featured-list"></div>
         <div class="featured-add-row">
-          <select id="feat-type">
+          <select id="feat-type" onchange="onFeatTypeChange()">
             <option value="series">Series</option>
             <option value="post">Post</option>
+            <option value="photo">Photo</option>
           </select>
-          <input type="text" id="feat-slug" placeholder="slug">
-          <input type="text" id="feat-label" placeholder="label (optional)">
+          <input type="text" id="feat-slug" class="feat-slug-input" placeholder="slug">
+          <input type="text" id="feat-photo-id" class="feat-photoid-input hidden" placeholder="photo ID">
+          <input type="text" id="feat-label" class="feat-label-input" placeholder="label (opt.)">
           <button class="btn-outline" onclick="addFeaturedItem()">Add</button>
         </div>
+        <span class="field-hint" id="feat-photo-hint" style="display:none">Photo ID can be found in the series panel (e.g. 001)</span>
       </div>
 
       <div><button class="btn-action" onclick="saveSettings()">Save settings →</button></div>
@@ -620,8 +671,8 @@
 let projects    = [];
 let posts       = [];
 let currentTab  = 'series';
-let editingPost = null;    // null = new, string = slug being edited
-let featuredItems = [];    // local state for settings panel
+let editingPost = null;
+let featuredItems = [];
 
 // ── Init ─────────────────────────────────────────────────────────
 loadProjects();
@@ -727,15 +778,28 @@ async function openDetail(slug) {
   document.getElementById('detail-title').textContent = p.slug;
   document.getElementById('detail-body').innerHTML = `<div style="color:var(--muted);font-size:12px">Loading…</div>`;
   openSheet('overlay-detail');
-  const photos = await api('GET', `/projects/${slug}/photos`);
-  renderDetail(p, photos);
+  const [photos, settings] = await Promise.all([
+    api('GET', `/projects/${slug}/photos`),
+    api('GET', '/settings').catch(() => ({})),
+  ]);
+  renderDetail(p, photos, settings);
 }
 
-function renderDetail(p, photos) {
+function renderDetail(p, photos, settings) {
+  const currentHeroKey = settings && settings.heroPhotoKey ? settings.heroPhotoKey : '';
+  const thisSeriesIsHero = currentHeroKey.startsWith(p.slug + '/');
+
+  const heroOptions = ['<option value="">None</option>']
+    .concat(photos.map(f => {
+      const label = f.caption ? `${f.id} — ${esc(f.caption)}` : f.id;
+      const sel = currentHeroKey === `${p.slug}/${f.id}` ? ' selected' : '';
+      return `<option value="${p.slug}/${f.id}"${sel}>${label}</option>`;
+    })).join('');
+
   document.getElementById('detail-body').innerHTML = `
 
     <!-- Status row -->
-    <div style="display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--border-light)">
+    <div style="display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--border-light);flex-wrap:wrap">
       <span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span>
       <span style="font-size:12px;color:var(--muted)">${photos.length} photo${photos.length !== 1 ? 's' : ''}</span>
       <div style="flex:1"></div>
@@ -773,6 +837,20 @@ function renderDetail(p, photos) {
       <div><button class="btn-outline" onclick="saveMetadata('${p.slug}')">Save details →</button></div>
     </div>
 
+    <!-- Hero -->
+    <div style="display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--border-light)">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Homepage hero</div>
+      <div class="field">
+        <label>Hero photo</label>
+        <select id="hero-select-${p.slug}">${heroOptions}</select>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button class="btn-outline" onclick="setHero('${p.slug}')">Set as hero</button>
+        ${thisSeriesIsHero ? `<button class="btn-outline" style="color:var(--muted)" onclick="clearHero()">Clear hero</button>` : ''}
+        ${currentHeroKey && !thisSeriesIsHero ? `<span style="font-size:11px;color:var(--muted)">Current hero: ${esc(currentHeroKey)}</span>` : ''}
+      </div>
+    </div>
+
   `;
 }
 
@@ -800,12 +878,15 @@ function photoCardHTML(slug, f, idx, total) {
         <button class="photo-card-del" onclick="deletePhoto('${slug}','${esc(f.id)}',event)" title="Delete">✕</button>
       </div>
       <div class="photo-body-section">
-        <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
-          ${hasBody ? '▸ Edit note' : '▸ Add note'}
-        </button>
+        <div class="photo-body-row">
+          <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
+            ${hasBody ? '▸ Edit note' : '▸ Add note'}
+          </button>
+          ${hasBody ? `<button class="photo-feature-btn" onclick="featurePhoto('${slug}','${esc(f.id)}')">✦ Feature</button>` : ''}
+        </div>
         <div class="photo-body-editor hidden" id="body-editor-${slug}-${esc(f.id)}">
           <textarea rows="4" placeholder="Markdown note shown on the photo permalink page…">${esc(hasBody ? f.body : '')}</textarea>
-          <div style="display:flex;gap:6px">
+          <div class="photo-body-actions">
             <button class="btn-outline" style="font-size:11px;padding:3px 10px"
               onclick="saveBody('${slug}','${esc(f.id)}',this)">Save note</button>
             ${hasBody ? `<button class="btn-outline" style="font-size:11px;padding:3px 10px;color:var(--muted)"
@@ -821,23 +902,48 @@ function toggleBodyEditor(btn, slug, id) {
   const editor = document.getElementById(`body-editor-${slug}-${id}`);
   const hidden = editor.classList.contains('hidden');
   editor.classList.toggle('hidden', !hidden);
-  btn.textContent = hidden ? '▾ ' + (btn.textContent.includes('Add') ? 'Add note' : 'Edit note') : (btn.textContent.includes('Add') ? '▸ Add note' : '▸ Edit note');
+  const isAdd = btn.textContent.includes('Add');
+  btn.textContent = hidden
+    ? (isAdd ? '▾ Add note' : '▾ Edit note')
+    : (isAdd ? '▸ Add note' : '▸ Edit note');
+}
+
+// ── Hero ──────────────────────────────────────────────────────────
+async function setHero(slug) {
+  const select = document.getElementById(`hero-select-${slug}`);
+  const key = select.value;
+  if (!key) { await clearHero(); return; }
+  try {
+    await api('PATCH', '/settings', { heroPhotoKey: key, heroLink: `/projects/${slug}/` });
+    toast('Homepage hero updated — rebuild to publish');
+    setRebuildStatus('dirty', 'Rebuild needed');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function clearHero() {
+  try {
+    await api('PATCH', '/settings', { heroPhotoKey: '', heroLink: '' });
+    toast('Hero cleared — rebuild to publish');
+    setRebuildStatus('dirty', 'Rebuild needed');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+// ── Feature a photo ───────────────────────────────────────────────
+async function featurePhoto(slug, id) {
+  try {
+    const current = await api('GET', '/settings');
+    const featured = Array.isArray(current.featured) ? current.featured : [];
+    const already = featured.some(f => f.type === 'photo' && f.slug === slug && f.photoId === id);
+    if (already) { toast('Already in featured'); return; }
+    const updated = [{ type: 'photo', slug, photoId: id, label: '' }, ...featured];
+    await api('PATCH', '/settings', { featured: updated });
+    toast('Photo added to featured — rebuild to publish');
+    setRebuildStatus('dirty', 'Rebuild needed');
+  } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
 // ── Photo reorder ─────────────────────────────────────────────────
-// currentPhotos is keyed by slug — we rebuild from the DOM card order
-function getPhotoOrderFromDOM(slug) {
-  const list = document.getElementById(`photo-list-${slug}`);
-  if (!list) return [];
-  return [...list.querySelectorAll('[data-photoid]')].map(el => el.dataset.photoid);
-}
-
 async function movePhoto(slug, id, direction) {
-  // Find photos list and current order from p.photos (live in DOM via data attrs)
-  const p = projects.find(x => x.slug === slug);
-  if (!p) return;
-
-  // Re-fetch current photos from API to get the latest order
   let photos;
   try { photos = await api('GET', `/projects/${slug}/photos`); }
   catch(e) { toast('Failed to fetch photos: ' + e.message, true); return; }
@@ -847,36 +953,27 @@ async function movePhoto(slug, id, direction) {
   const newIdx = idx + direction;
   if (newIdx < 0 || newIdx >= photos.length) return;
 
-  // Swap
   [photos[idx], photos[newIdx]] = [photos[newIdx], photos[idx]];
   const photoOrder = photos.map(f => f.id);
 
   try {
     await api('PATCH', `/projects/${slug}`, { photoOrder });
     setRebuildStatus('dirty', 'Rebuild needed');
-    // Re-render the photo list in place
     const list = document.getElementById(`photo-list-${slug}`);
-    if (list) {
-      list.innerHTML = photos.map((f, i) => photoCardHTML(slug, f, i, photos.length)).join('');
-    }
-  } catch(e) {
-    toast('Reorder failed: ' + e.message, true);
-  }
+    if (list) list.innerHTML = photos.map((f, i) => photoCardHTML(slug, f, i, photos.length)).join('');
+  } catch(e) { toast('Reorder failed: ' + e.message, true); }
 }
 
-// ── Caption save ──────────────────────────────────────────────────
+// ── Caption / body ────────────────────────────────────────────────
 async function saveCaption(slug, id, input) {
   const caption = input.value.trim();
   try {
     await api('PATCH', `/projects/${slug}/photos/${id}`, { caption });
     setRebuildStatus('dirty', 'Rebuild needed');
     toast('Caption saved');
-  } catch(e) {
-    toast('Save failed: ' + e.message, true);
-  }
+  } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
-// ── Photo body save ───────────────────────────────────────────────
 async function saveBody(slug, id, btn) {
   const editor = document.getElementById(`body-editor-${slug}-${id}`);
   const body = editor.querySelector('textarea').value;
@@ -884,12 +981,9 @@ async function saveBody(slug, id, btn) {
     await api('PATCH', `/projects/${slug}/photos/${id}`, { body });
     setRebuildStatus('dirty', 'Rebuild needed');
     toast('Note saved');
-    // Update toggle button text
     const toggle = editor.closest('.photo-card').querySelector('.photo-body-toggle');
     toggle.textContent = '▾ Edit note';
-  } catch(e) {
-    toast('Save failed: ' + e.message, true);
-  }
+  } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
 async function clearBody(slug, id, btn) {
@@ -903,11 +997,8 @@ async function clearBody(slug, id, btn) {
     toggle.textContent = '▸ Add note';
     editor.querySelector('textarea').value = '';
     editor.classList.add('hidden');
-    // Remove "Remove note" button
     btn.remove();
-  } catch(e) {
-    toast('Remove failed: ' + e.message, true);
-  }
+  } catch(e) { toast('Remove failed: ' + e.message, true); }
 }
 
 async function deletePhoto(slug, id, e) {
@@ -979,8 +1070,11 @@ async function uploadFiles(files, slug) {
 
   setRebuildStatus('dirty', 'Rebuild needed');
   const p = projects.find(x => x.slug === slug);
-  const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
-  renderDetail(p, photos);
+  const [photos, settings] = await Promise.all([
+    api('GET', `/projects/${slug}/photos`).catch(() => []),
+    api('GET', '/settings').catch(() => ({})),
+  ]);
+  renderDetail(p, photos, settings);
 }
 
 function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
@@ -1129,8 +1223,7 @@ async function confirmDeletePost(slug, title) {
 
 async function deletePost() {
   if (!editingPost) return;
-  const titleEl = document.getElementById('post-title');
-  const title = titleEl.value || editingPost;
+  const title = document.getElementById('post-title').value || editingPost;
   if (!confirm(`Delete post "${title}"? This cannot be undone.`)) return;
   try {
     await api('DELETE', `/posts/${editingPost}`);
@@ -1174,11 +1267,16 @@ async function openSettings() {
     document.getElementById('set-nav').value          = s.navLabel     ?? '';
     document.getElementById('set-photographer').value = s.photographer ?? '';
     document.getElementById('set-description').value  = s.description  ?? '';
-    document.getElementById('set-hero-key').value     = s.heroPhotoKey ?? '';
-    document.getElementById('set-hero-link').value    = s.heroLink     ?? '';
     featuredItems = Array.isArray(s.featured) ? s.featured.map(f => ({...f})) : [];
     renderFeaturedList();
   } catch(e) { toast('Failed to load settings: ' + e.message, true); }
+}
+
+function onFeatTypeChange() {
+  const type = document.getElementById('feat-type').value;
+  const isPhoto = type === 'photo';
+  document.getElementById('feat-photo-id').classList.toggle('hidden', !isPhoto);
+  document.getElementById('feat-photo-hint').style.display = isPhoto ? '' : 'none';
 }
 
 function renderFeaturedList() {
@@ -1187,25 +1285,39 @@ function renderFeaturedList() {
     list.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:4px 0">No featured items</div>`;
     return;
   }
-  list.innerHTML = featuredItems.map((item, idx) => `
-    <div class="featured-item">
-      <span class="badge" style="font-size:10px;padding:1px 5px;border:1px solid var(--border)">${esc(item.type)}</span>
-      <span class="featured-item-label">${esc(item.slug)}${item.label ? ' — ' + esc(item.label) : ''}</span>
-      <button class="btn-icon" ${idx === 0 ? 'disabled' : ''} onclick="moveFeatured(${idx},-1)">▲</button>
-      <button class="btn-icon" ${idx === featuredItems.length-1 ? 'disabled' : ''} onclick="moveFeatured(${idx},1)">▼</button>
-      <button class="btn-icon" onclick="removeFeatured(${idx})" style="color:var(--red)">✕</button>
-    </div>
-  `).join('');
+  list.innerHTML = featuredItems.map((item, idx) => {
+    const typeLabel = item.type === 'photo' ? 'photo' : item.type;
+    const itemLabel = item.type === 'photo'
+      ? `${esc(item.slug)}/${esc(item.photoId || '')}${item.label ? ' — ' + esc(item.label) : ''}`
+      : `${esc(item.slug)}${item.label ? ' — ' + esc(item.label) : ''}`;
+    return `
+      <div class="featured-item">
+        <span class="badge" style="font-size:10px;padding:1px 5px;border:1px solid var(--border)">${typeLabel}</span>
+        <span class="featured-item-label">${itemLabel}</span>
+        <button class="btn-icon" ${idx === 0 ? 'disabled' : ''} onclick="moveFeatured(${idx},-1)">▲</button>
+        <button class="btn-icon" ${idx === featuredItems.length-1 ? 'disabled' : ''} onclick="moveFeatured(${idx},1)">▼</button>
+        <button class="btn-icon" onclick="removeFeatured(${idx})" style="color:var(--red)">✕</button>
+      </div>
+    `;
+  }).join('');
 }
 
 function addFeaturedItem() {
-  const type  = document.getElementById('feat-type').value;
-  const slug  = document.getElementById('feat-slug').value.trim();
-  const label = document.getElementById('feat-label').value.trim();
+  const type    = document.getElementById('feat-type').value;
+  const slug    = document.getElementById('feat-slug').value.trim();
+  const label   = document.getElementById('feat-label').value.trim();
+  const photoId = type === 'photo' ? document.getElementById('feat-photo-id').value.trim() : undefined;
+
   if (!slug) { toast('Slug is required', true); return; }
-  featuredItems.push({ type, slug, label });
+  if (type === 'photo' && !photoId) { toast('Photo ID is required', true); return; }
+
+  const item = { type, slug, label };
+  if (photoId) item.photoId = photoId;
+  featuredItems.push(item);
+
   document.getElementById('feat-slug').value = '';
   document.getElementById('feat-label').value = '';
+  document.getElementById('feat-photo-id').value = '';
   renderFeaturedList();
 }
 
@@ -1227,8 +1339,6 @@ async function saveSettings() {
     navLabel:     document.getElementById('set-nav').value.trim(),
     photographer: document.getElementById('set-photographer').value.trim(),
     description:  document.getElementById('set-description').value.trim(),
-    heroPhotoKey: document.getElementById('set-hero-key').value.trim(),
-    heroLink:     document.getElementById('set-hero-link').value.trim(),
     featured:     featuredItems,
   };
   try {
