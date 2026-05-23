@@ -1,0 +1,21 @@
+# Cloudflare Pages project config
+# Used by `npx wrangler pages dev` for local dev and `wrangler pages deploy` for production.
+#
+# Production bindings (R2, IMAGES, secrets) are configured in the Pages project dashboard:
+#   Pages → Settings → Functions → Bindings & Variables
+# The entries below are for local dev only (wrangler pages dev).
+
+name = "static-photos"
+compatibility_date = "2025-01-01"
+pages_build_output_dir = "site/public"
+
+[images]
+binding = "IMAGES"
+
+[[r2_buckets]]
+binding = "ASSETS_BUCKET"
+bucket_name = "static-photos-assets"
+
+[[r2_buckets]]
+binding = "ORIGINALS_BUCKET"
+bucket_name = "static-photos-originals"

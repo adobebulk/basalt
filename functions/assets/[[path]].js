@@ -1,31 +1,29 @@
 /**
  * /assets/[[path]] — streams image variants from the public R2 bucket.
  *
- * URL scheme: /assets/<key>/<size>.<fmt>
- *   e.g. /assets/iceland-2025/001/1200.avif
+ * URL scheme: /assets/<key>/<size>.<fmt>   e.g. /assets/iceland-2025/001/1200.avif
+ *             /assets/<slug>/<id>/original.jpg  (only if marked downloadable)
  *
- * Edge-cached via Cache-Control: immutable (content-addressed by key+size+fmt).
- * Variants are pre-baked by the admin upload pipeline — they don't change in place;
- * a re-process produces new objects at the same keys after a cache purge.
+ * Variants (600/1200/2400 px, AVIF + JPEG) are always public once uploaded.
+ * original.jpg is only served if it has been explicitly copied into ASSETS_BUCKET
+ * via the "copy-to-public" downloadable toggle in the admin — otherwise 404.
+ * This means the access check is purely "does it exist in ASSETS_BUCKET?" — no
+ * per-request auth logic, no race conditions, easy to audit.
  *
- * NOTE: downloadable-original enforcement (checking the `downloadable` flag and
- * routing originals through the private bucket) is wired in the next session (Phase 2).
- * For now, original.jpg objects are reachable here if they happen to exist in
- * ASSETS_BUCKET — that's acceptable during development but must be locked down before
- * production cutover.
+ * Edge-cached via Cache-Control: immutable (content is never mutated in place;
+ * reprocessing produces new R2 objects, and a CDN purge is issued by the admin).
  */
 
 export async function onRequest(ctx) {
   const { env, params } = ctx;
 
-  // TODO (Phase 0): ensure ASSETS_BUCKET R2 binding is configured in the Pages project.
   const bucket = env.ASSETS_BUCKET;
   if (!bucket) {
     return new Response("ASSETS_BUCKET binding not configured", { status: 503 });
   }
 
   // params.path is an array of path segments from the [[path]] catch-all.
-  const key = Array.isArray(params.path) ? params.path.join("/") : params.path ?? "";
+  const key = Array.isArray(params.path) ? params.path.join("/") : (params.path ?? "");
   if (!key) return new Response("Not found", { status: 404 });
 
   const object = await bucket.get(key);
@@ -34,6 +32,8 @@ export async function onRequest(ctx) {
   const headers = new Headers();
   object.writeHttpMetadata(headers);
   headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  // Allow <img> on the same origin (and social unfurlers)
+  headers.set("Access-Control-Allow-Origin", "*");
 
   return new Response(object.body, { headers });
 }
