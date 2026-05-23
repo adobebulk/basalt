@@ -1,0 +1,12 @@
+{{/* Returns the photo map for a per-photo page (by .Params.photoid),
+     looked up from the parent series manifest. Returns false if not found. */ -}}
+{{- $photo := false -}}
+{{- if .Params.photoid -}}
+  {{- $pid := .Params.photoid -}}
+  {{- with .Parent -}}
+    {{- range .Params.photos -}}
+      {{- if eq .id $pid -}}{{- $photo = . -}}{{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- return $photo -}}

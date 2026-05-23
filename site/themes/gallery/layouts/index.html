@@ -1,25 +1,26 @@
 <!DOCTYPE html>
-<html lang="{{ .Site.LanguageCode }}">
+<html lang="{{ .Site.Language.Locale }}">
 <head>{{ partial "head.html" . }}</head>
 <body class="min-h-screen flex flex-col bg-stone-50 text-stone-900 font-sans">
   {{ partial "header.html" . }}
 
   <main class="flex-1 p-1.5">
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
-      {{- $projects := where (where .Site.RegularPages "Section" "projects") "Params.draft" "ne" true -}}
+      {{- $base := .Site.Params.assetsBaseURL -}}
+      {{- $projects := where (site.GetPage "/projects").Sections "Params.draft" "ne" true -}}
       {{- range sort $projects "Date" "desc" -}}
-        {{- $images := .Resources.ByType "image" -}}
-        {{- $cover  := index $images 0 -}}
-        {{- $coverName := .Params.cover -}}
-        {{- if $coverName -}}
-          {{- $c := .Resources.GetMatch $coverName -}}
-          {{- if $c }}{{ $cover = $c }}{{ end -}}
+        {{- $photos := .Params.photos -}}
+        {{- $count := len $photos -}}
+        {{- $coverKey := "" -}}
+        {{- $coverID := .Params.cover -}}
+        {{- range $photos -}}
+          {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
         {{- end -}}
+        {{- if and (eq $coverKey "") (gt $count 0) -}}{{- $coverKey = (index $photos 0).key -}}{{- end -}}
 
         <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
-          {{- with $cover -}}
-            {{- $thumb := .Fill "800x600 q85 Center" -}}
-            <div class="project-thumb" style="background-image: url('{{ $thumb.RelPermalink }}')"></div>
+          {{- if ne $coverKey "" -}}
+            <div class="project-thumb" style="background-image: url('{{ $base }}/{{ $coverKey }}/600.jpg')"></div>
           {{- else -}}
             <div class="w-full h-full bg-stone-200"></div>
           {{- end -}}
@@ -28,7 +29,7 @@
                       bg-gradient-to-t from-black/60 to-transparent
                       opacity-0 group-hover:opacity-100 transition-opacity duration-200">
             <span class="text-white text-sm font-semibold tracking-tight leading-snug">{{ .Title }}</span>
-            <span class="text-white/60 text-xs mt-0.5">{{ len $images }} photo{{ if ne (len $images) 1 }}s{{ end }}</span>
+            <span class="text-white/60 text-xs mt-0.5">{{ $count }} photo{{ if ne $count 1 }}s{{ end }}</span>
           </div>
         </a>
       {{- end -}}

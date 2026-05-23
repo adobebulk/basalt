@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="{{ .Site.Language.Locale }}">
+<head>{{ partial "head.html" . }}</head>
+<body class="min-h-screen flex flex-col bg-stone-50 text-stone-900 font-sans">
+  {{ partial "header.html" . }}
+
+  {{- $base := .Site.Params.assetsBaseURL -}}
+  {{- $photos := .Params.photos -}}
+
+  <main class="flex-1">
+  {{- if $photos -}}
+    {{/* ── SERIES PAGE: photo grid from the manifest ── */}}
+    <div class="px-6 py-10 border-b border-stone-200">
+      <h1 class="text-3xl font-bold tracking-tight leading-tight">{{ .Title }}</h1>
+      {{- with .Params.description }}
+        <p class="mt-3 text-sm text-stone-500 max-w-xl leading-relaxed">{{ . }}</p>
+      {{- end -}}
+      {{- with .Date }}
+        <p class="mt-2 text-xs text-stone-400 tabular-nums">{{ .Format "2006" }}</p>
+      {{- end -}}
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 p-1.5" id="photo-grid">
+      {{- range $i, $p := $photos -}}
+        <a
+          class="block overflow-hidden rounded-sm bg-stone-200 aspect-[3/2] cursor-zoom-in group"
+          href="{{ $.RelPermalink }}{{ $p.id }}/"
+          data-pswp-src="{{ $base }}/{{ $p.key }}/2400.jpg"
+          data-pswp-width="{{ $p.width }}"
+          data-pswp-height="{{ $p.height }}"
+        >
+          <img
+            class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
+            src="{{ $base }}/{{ $p.key }}/600.jpg"
+            srcset="{{ $base }}/{{ $p.key }}/600.avif 600w, {{ $base }}/{{ $p.key }}/1200.avif 1200w"
+            sizes="(min-width:1024px) 33vw, (min-width:640px) 50vw, 100vw"
+            loading="{{ if lt $i 6 }}eager{{ else }}lazy{{ end }}"
+            alt="{{ with $p.caption }}{{ . }}{{ else }}{{ $.Title }}{{ end }}"
+          >
+        </a>
+      {{- end -}}
+    </div>
+
+    <div class="px-6 py-5 mt-2 border-t border-stone-200">
+      <a href="{{ "/" | relURL }}" class="text-sm text-stone-400 hover:text-stone-900 transition-colors">← All projects</a>
+    </div>
+  {{- else -}}
+    {{/* ── PARENT LANDING (/projects/): list series ── */}}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5 p-1.5">
+      {{- range sort (where .Sections "Params.draft" "ne" true) "Date" "desc" -}}
+        {{- $cphotos := .Params.photos -}}
+        {{- $ckey := "" -}}{{- with index $cphotos 0 }}{{ $ckey = .key }}{{ end -}}
+        <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
+          {{- if ne $ckey "" -}}
+            <div class="project-thumb" style="background-image: url('{{ $base }}/{{ $ckey }}/600.jpg')"></div>
+          {{- else -}}
+            <div class="w-full h-full bg-stone-200"></div>
+          {{- end -}}
+          <div class="absolute inset-0 flex flex-col justify-end p-5 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <span class="text-white text-sm font-semibold tracking-tight">{{ .Title }}</span>
+          </div>
+        </a>
+      {{- end -}}
+    </div>
+  {{- end -}}
+  </main>
+
+  <footer class="px-6 py-4 text-xs text-stone-400 border-t border-stone-200">
+    © {{ now.Year }} {{ .Site.Params.photographer }}
+  </footer>
+
+  {{- if $photos -}}
+  <script type="module">
+    import PhotoSwipeLightbox from 'https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe-lightbox.esm.js';
+    const lightbox = new PhotoSwipeLightbox({
+      gallery: '#photo-grid',
+      children: 'a[data-pswp-src]',
+      pswpModule: () => import('https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe.esm.js'),
+      bgOpacity: 0.96,
+      showHideAnimationType: 'fade',
+    });
+    // Links point at per-photo permalink pages (shareable, JS-free fallback);
+    // override the lightbox source to use the full 2400px image.
+    lightbox.addFilter('itemData', (itemData) => {
+      const el = itemData.element;
+      if (el) {
+        itemData.src = el.dataset.pswpSrc;
+        itemData.width = parseInt(el.dataset.pswpWidth, 10);
+        itemData.height = parseInt(el.dataset.pswpHeight, 10);
+      }
+      return itemData;
+    });
+    lightbox.init();
+  </script>
+  {{- end -}}
+</body>
+</html>

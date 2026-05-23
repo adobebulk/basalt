@@ -1,0 +1,34 @@
+{{/* Open Graph / Twitter card tags.
+     IMPORTANT: og:image points at the JPEG variant (1200.jpg), never AVIF —
+     most link unfurlers don't render AVIF. */ -}}
+{{- $base := .Site.Params.assetsBaseURL -}}
+{{- $img := "" -}}
+{{- $title := .Title -}}
+{{- $desc := "" -}}
+{{- if .Params.photoid -}}
+  {{- $photo := partial "getphoto.html" . -}}
+  {{- with $photo -}}
+    {{- $img = printf "%s/%s/1200.jpg" $base .key -}}
+    {{- $cap := string .caption -}}
+    {{- $title = cond (ne $cap "") $cap $.Parent.Title -}}
+    {{- $desc = $.Parent.Params.description -}}
+  {{- end -}}
+{{- else if .Params.photos -}}
+  {{- $cover := .Params.cover -}}
+  {{- $ckey := "" -}}
+  {{- range .Params.photos -}}{{- if eq .id $cover -}}{{- $ckey = .key -}}{{- end -}}{{- end -}}
+  {{- if and (eq $ckey "") (gt (len .Params.photos) 0) -}}{{- $ckey = (index .Params.photos 0).key -}}{{- end -}}
+  {{- with $ckey -}}{{- $img = printf "%s/%s/1200.jpg" $base . -}}{{- end -}}
+  {{- $desc = .Params.description -}}
+{{- else -}}
+  {{- $desc = .Site.Params.description -}}
+{{- end -}}
+<meta property="og:title" content="{{ $title }}">
+<meta property="og:type" content="{{ if .Params.photoid }}article{{ else }}website{{ end }}">
+<meta property="og:url" content="{{ .Permalink }}">
+{{- with $desc }}
+<meta property="og:description" content="{{ . }}">{{ end }}
+{{- with $img }}
+<meta property="og:image" content="{{ . }}">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="{{ . }}">{{ end }}

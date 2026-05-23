@@ -1,6 +1,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{{- if .Params.photoid -}}
+  {{- $photo := partial "getphoto.html" . -}}
+  {{- $cap := "" -}}{{- with $photo }}{{ $cap = string .caption }}{{ end -}}
+<title>{{ if ne $cap "" }}{{ $cap }}{{ else }}Photo {{ .Params.photoid }}{{ end }} — {{ .Parent.Title }} — {{ .Site.Title }}</title>
+{{- else -}}
 <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — {{ .Site.Title }}{{ end }}</title>
+{{- end }}
 <meta name="description" content="{{ with .Params.description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}">
+{{ partial "og.html" . }}
 <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe.css">
