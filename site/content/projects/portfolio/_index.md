@@ -144,4 +144,10 @@ photos:
     height: 4000
     caption: ''
     downloadable: false
+  - id: '024'
+    key: portfolio/024
+    width: 6000
+    height: 4000
+    caption: ''
+    downloadable: false
 ---
