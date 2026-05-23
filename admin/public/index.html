@@ -501,22 +501,75 @@ async function deletePhoto(slug, filename, e) {
   toast('Deleted ' + filename);
 }
 
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;   // 30 MB — above this, pre-compress
+const MAX_UPLOAD_PX    = 8000;                // max long edge in pixels
+const UPLOAD_QUALITY   = 0.92;               // JPEG quality for the re-compressed file
+
+function resizeForUpload(file) {
+  // If small enough, use as-is (preserves original format/quality).
+  if (file.size <= MAX_UPLOAD_BYTES) return Promise.resolve(file);
+
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const { naturalWidth: w, naturalHeight: h } = img;
+      const scale = Math.min(1, MAX_UPLOAD_PX / Math.max(w, h));
+      const cw = Math.round(w * scale);
+      const ch = Math.round(h * scale);
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = cw;
+      canvas.height = ch;
+      canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
+
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { reject(new Error('Canvas export failed')); return; }
+          const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
+          resolve(new File([blob], name, { type: 'image/jpeg' }));
+        },
+        'image/jpeg',
+        UPLOAD_QUALITY
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
+    img.src = url;
+  });
+}
+
 async function uploadFiles(files, slug) {
   if (!files.length) return;
   const zone = document.getElementById(`drop-${slug}`);
-  zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${files.length} file${files.length > 1 ? 's' : ''}…</strong>`;
+
+  zone.innerHTML = `<strong>Preparing ${files.length} file${files.length > 1 ? 's' : ''}…</strong>`;
+
+  let processedFiles;
+  try {
+    processedFiles = await Promise.all(Array.from(files).map(resizeForUpload));
+  } catch (e) {
+    toast(e.message || 'Failed to prepare image', true);
+    const p = projects.find(x => x.slug === slug);
+    const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
+    renderDetail(p, photos);
+    return;
+  }
+
+  zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${processedFiles.length} file${processedFiles.length > 1 ? 's' : ''}…</strong>`;
+
   const fd = new FormData();
-  for (const f of files) fd.append('photos', f);
+  for (const f of processedFiles) fd.append('photos', f);
+
   try {
     const res = await api('POST', `/projects/${slug}/photos`, fd, true);
-    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
+    toast(`Uploaded ${res.added.length} photo${res.added.length > 1 ? 's' : ''}`);
     setRebuildStatus('dirty', 'Rebuild needed');
     const p = projects.find(x => x.slug === slug);
     const photos = await api('GET', `/projects/${slug}/photos`);
     renderDetail(p, photos);
-  } catch(e) {
+  } catch (e) {
     toast(e.message || 'Upload failed', true);
-    // Re-render the full detail panel to restore the upload zone with working bindings.
     const p = projects.find(x => x.slug === slug);
     const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
     renderDetail(p, photos);
