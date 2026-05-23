@@ -24,6 +24,7 @@ photos:
     height: 1773
     caption: ''
     downloadable: false
+    body: Bixby Creek Bridge in Big Sur
   - id: '004'
     key: instagram/004
     width: 2456
