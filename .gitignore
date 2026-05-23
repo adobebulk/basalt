@@ -21,3 +21,5 @@ Thumbs.db
 
 # Logs (the directory is tracked via .gitkeep, but not the log files)
 logs/*.log
+.dev.vars
+.wrangler/

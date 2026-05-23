@@ -1,6 +1,8 @@
 {{/* Open Graph / Twitter card tags.
      IMPORTANT: og:image points at the JPEG variant (1200.jpg), never AVIF —
-     most link unfurlers don't render AVIF. */ -}}
+     most link unfurlers don't render AVIF.
+     assetsBaseURL is root-relative (/assets), so we use absURL to produce the
+     absolute https://photos.ctsmith.org/assets/... URL required by OG/Twitter. */ -}}
 {{- $base := .Site.Params.assetsBaseURL -}}
 {{- $img := "" -}}
 {{- $title := .Title -}}
@@ -8,7 +10,7 @@
 {{- if .Params.photoid -}}
   {{- $photo := partial "getphoto.html" . -}}
   {{- with $photo -}}
-    {{- $img = printf "%s/%s/1200.jpg" $base .key -}}
+    {{- $img = printf "%s/%s/1200.jpg" $base .key | absURL -}}
     {{- $cap := string .caption -}}
     {{- $title = cond (ne $cap "") $cap $.Parent.Title -}}
     {{- $desc = $.Parent.Params.description -}}
@@ -18,7 +20,7 @@
   {{- $ckey := "" -}}
   {{- range .Params.photos -}}{{- if eq .id $cover -}}{{- $ckey = .key -}}{{- end -}}{{- end -}}
   {{- if and (eq $ckey "") (gt (len .Params.photos) 0) -}}{{- $ckey = (index .Params.photos 0).key -}}{{- end -}}
-  {{- with $ckey -}}{{- $img = printf "%s/%s/1200.jpg" $base . -}}{{- end -}}
+  {{- with $ckey -}}{{- $img = printf "%s/%s/1200.jpg" $base . | absURL -}}{{- end -}}
   {{- $desc = .Params.description -}}
 {{- else -}}
   {{- $desc = .Site.Params.description -}}

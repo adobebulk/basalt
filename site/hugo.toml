@@ -8,10 +8,10 @@ theme = "gallery"
   description   = "A photo gallery"
   # Number of columns in the project grid on the homepage (desktop)
   gridColumns   = 3
-  # R2 public bucket custom domain. Images are referenced as
-  # {assetsBaseURL}/<key>/<size>.<fmt>  e.g. .../iceland-2025/001/1200.avif
-  # Hostname is still TBD — see DEPLOYMENT-PLAN.md §10.
-  assetsBaseURL = "https://assets.ctsmith.org"
+  # Root-relative asset path — served by the /assets Pages Function (streams from R2).
+  # Images are referenced as {assetsBaseURL}/<key>/<size>.<fmt>
+  # e.g. /assets/iceland-2025/001/1200.avif
+  assetsBaseURL = "/assets"
 
 [build]
   writeStats = true

@@ -2,7 +2,7 @@
 
 Context file for both Cowork and Claude Code. Keep this up to date as the project evolves.
 
-> **Architecture redesigned 2026-05-21.** The project moved from a Mac-Mini-as-hub model to a **decoupled (Jamstack) architecture**: build the site from code, store the heavy assets in object storage, run the admin as serverless code. The full migration plan, rationale, and open decisions live in **`DEPLOYMENT-PLAN.md`** — read that first. This file is the working summary the scaffold should target.
+> **Architecture redesigned 2026-05-21, single-host decision 2026-05-22.** The project moved from a Mac-Mini-as-hub model to a **decoupled (Jamstack) architecture**: build the site from code, store the heavy assets in object storage, run the admin as serverless code. Everything is served from **one hostname** (`photos.ctsmith.org`) via a single Cloudflare Pages project. The full migration plan, rationale, and open decisions live in **`DEPLOYMENT-PLAN.md`** — read that first. This file is the working summary.
 
 ---
 
@@ -18,22 +18,33 @@ A self-hosted photo gallery for an amateur photographer. A fast **static Hugo si
 
 ```
 You (phone / laptop, anywhere)
-  → admin.ctsmith.org            [Cloudflare Access login gate]
-    → Admin (Cloudflare Worker / Pages Function — serverless, scales to zero)
-        1. Resize via Cloudflare's image-transform binding (AVIF + JPEG)
-        2. PUT variants → public R2 bucket ; original → private R2 bucket
+  → photos.ctsmith.org/admin     [Cloudflare Access login gate]
+    → Pages Function (/api/*)    [admin backend — serverless, scales to zero]
+        1. Resize via Cloudflare's image-transform binding (AVIF + JPEG, strip all metadata)
+        2. PUT variants → ASSETS_BUCKET (public R2); original → ORIGINALS_BUCKET (private R2)
         3. Commit series metadata (TEXT ONLY) → GitHub
         4. Ping Cloudflare Pages deploy hook   ← the "Rebuild" button
 
 GitHub repo (Hugo source + per-series manifest, NO binaries)
   → Cloudflare Pages build (fast — no image processing)
-    → static HTML/CSS on Cloudflare's CDN
+    → static HTML/CSS + Functions on Cloudflare's CDN
 
-Visitor → photos.ctsmith.org      [Pages / CDN for HTML]
-                                  [images streamed from R2 via assets.ctsmith.org]
+Visitor → photos.ctsmith.org          [Pages / CDN for HTML]
+  → photos.ctsmith.org/assets/*       [Pages Function → R2 stream, edge-cached]
 
 RAW originals → personal backup drive (never enter this pipeline)
 ```
+
+**Single hostname.** Everything is `photos.ctsmith.org` — no `admin.` or `assets.` subdomains:
+
+| Path | What serves it |
+|---|---|
+| `/` and all gallery pages | Hugo static output (Cloudflare Pages CDN) |
+| `/admin` | Static admin UI HTML (served by Pages from `site/static/admin/`) |
+| `/api/*` | Pages Function (`functions/api/[[route]].js`) — gated by Cloudflare Access |
+| `/assets/*` | Pages Function (`functions/assets/[[path]].js`) — streams from R2, edge-cached |
+
+Cloudflare Access is configured to gate `/admin*` and `/api*`; gallery pages and `/assets/*` are public.
 
 The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflared`, launchd, and the `sauron` server account are all retired. The design stays portable: see "Future option — self-host" in `DEPLOYMENT-PLAN.md` §6a.
 
@@ -46,44 +57,52 @@ The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflar
 | Static site | Hugo (extended) | `brew install hugo`. No longer processes images at build. |
 | CSS | Tailwind CSS v3 | Built via CLI, not PostCSS |
 | Lightbox | PhotoSwipe v5 | Loaded from jsDelivr CDN |
-| Hosting (gallery) | Cloudflare Pages | Builds Hugo on push + on deploy-hook. Free tier. |
-| Asset storage | Cloudflare R2 | Two buckets: public (variants + public originals) + private (originals). No egress fees. |
-| Image processing | Cloudflare image-transform binding | Pre-bakes 600/1200/2400px AVIF + JPEG. (Sharp + exiftool only if we take the Containers route — see Open decisions.) |
-| Admin | Cloudflare Worker / Pages Function | Serverless. Existing monospace admin UI kept; backend rewritten to talk to R2 + GitHub. |
-| Auth | Cloudflare Access | Self-hosted application gating the admin. |
-| Deploy trigger | Cloudflare Pages deploy hook | The admin "Rebuild" button POSTs to it. |
+| Hosting | Cloudflare Pages | Builds Hugo on push + on deploy-hook. Free tier. |
+| Asset serving | Pages Function `/assets/*` | Streams from R2; edge-cached immutably. |
+| Asset storage | Cloudflare R2 | Two buckets: `ASSETS_BUCKET` (public variants + public originals) + `ORIGINALS_BUCKET` (all originals, private). No egress fees. |
+| Image processing | Cloudflare image-transform binding (`IMAGES`) | Pre-bakes 600/1200/2400px AVIF + JPEG; strips all metadata. |
+| Admin backend | Pages Functions (`/api/*`) | Serverless. Existing monospace admin UI kept; backend rewritten to talk to R2 + GitHub. |
+| Admin UI | Static HTML at `/admin` | `site/static/admin/index.html` — served by Pages, gated by Access. |
+| Auth | Cloudflare Access | Gates `/admin*` and `/api*` on `photos.ctsmith.org`. |
+| Deploy trigger | Cloudflare Pages deploy hook | The admin "Rebuild" button POSTs to `DEPLOY_HOOK_URL`. |
 
 ---
 
-## Directory structure (target after scaffold)
+## Directory structure
 
 ```
 static-photos/
-├── CLAUDE.md               ← you are here (working summary)
-├── DEPLOYMENT-PLAN.md      ← full migration plan + rationale + open decisions
-├── README.md               ← user-facing setup guide
-├── package.json            ← root: Tailwind + dev scripts
-├── tailwind.config.js      ← scans site/themes/gallery/layouts/**
-├── wrangler.toml           ← Cloudflare Worker (admin) config + R2 bindings
+├── CLAUDE.md                   ← you are here (working summary)
+├── DEPLOYMENT-PLAN.md          ← full migration plan + rationale + open decisions
+├── .dev.vars.example           ← copy to .dev.vars for local wrangler dev
+├── package.json                ← root: Tailwind + dev scripts
+├── tailwind.config.js          ← scans site/themes/gallery/layouts/**
+├── wrangler.toml               ← Pages project config + R2 bindings (Phase 0)
+├── functions/                  ← Cloudflare Pages Functions
+│   ├── _lib/env.js             ← central binding/var registry (getEnv helper)
+│   ├── assets/[[path]].js      ← R2 stream handler (edge-cached)
+│   └── api/[[route]].js        ← admin API router (stubbed → Phase 2)
 ├── admin/
-│   ├── worker.js           ← admin backend (Worker): uploads → R2, manifest → GitHub, deploy hook
+│   ├── server.js               ← OLD Express server (reference only; being replaced)
 │   └── public/
-│       └── index.html      ← admin UI (monospace catalog aesthetic, US Graphics inspired — KEEP)
-└── site/                   ← Hugo site root (run hugo --source site)
-    ├── hugo.toml           ← + assetsBaseURL param (R2 image domain)
+│       └── index.html          ← admin UI source (monospace catalog aesthetic — KEEP)
+└── site/                       ← Hugo site root (run hugo --source site)
+    ├── hugo.toml               ← assetsBaseURL = "/assets"; baseURL = production domain
     ├── assets/css/input.css
-    ├── static/css/style.css
+    ├── static/
+    │   ├── css/style.css
+    │   └── admin/index.html    ← admin UI served at /admin (copied from admin/public/)
     ├── content/projects/
     │   ├── _index.md
-    │   └── <series-slug>/        ← branch bundle
-    │       ├── _index.md   ← manifest: front matter + photos[] (NO image files)
-    │       └── <id>.md     ← per-photo permalink stub (photoid only); admin generates these
+    │   └── <series-slug>/      ← branch bundle
+    │       ├── _index.md       ← manifest: front matter + photos[] (NO image files)
+    │       └── <id>.md         ← per-photo permalink stub (photoid only)
     └── themes/gallery/layouts/
-        ├── index.html       ← homepage: grid of series covers (reads manifest, not .Resources)
+        ├── index.html           ← homepage: series grid (manifest-driven)
         ├── 404.html
         ├── projects/
-        │   ├── section.html ← series page: photo grid + PhotoSwipe (R2 srcset)
-        │   └── single.html  ← per-photo permalink page w/ Open Graph tags
+        │   ├── section.html    ← series page: photo grid + PhotoSwipe (R2 srcset)
+        │   └── single.html     ← per-photo permalink + OG tags
         └── partials/{head.html, header.html, og.html, getphoto.html}
 ```
 
@@ -97,17 +116,17 @@ static-photos/
 # Local dev: Tailwind watch + Hugo live server → http://localhost:1313
 npm run dev
 
-# Local admin (Worker) dev with Wrangler → talks to R2 (or a local mock)
-npx wrangler dev admin/worker.js
-
-# Production build of the static site (CI / Cloudflare Pages runs this)
+# Production build (CI / Cloudflare Pages runs this)
 npm run build            # tailwind --minify && hugo --source site --minify
 
-# Deploy the admin Worker
-npx wrangler deploy
+# Local Pages Functions dev (stubs return 501; /assets/* errors without R2 binding)
+npx wrangler pages dev site/public
+
+# Live admin Worker logs (production)
+npx wrangler tail
 ```
 
-Publishing photos happens through the **admin UI** (at `admin.ctsmith.org`, gated by Cloudflare Access), not the CLI. The admin's "Rebuild" button pings the Pages deploy hook; there is nothing to start at boot anywhere.
+Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin`, gated by Cloudflare Access), not the CLI.
 
 ---
 
@@ -138,19 +157,19 @@ Photo order = array order (reorder freely without renaming; permalinks key off t
 **R2 object layout, per photo** (`<series>/<id>/...`):
 
 ```
-iceland-2025/001/original.jpg   # full-res "download original" (private bucket by default)
+iceland-2025/001/original.jpg   # full-res (ORIGINALS_BUCKET by default; ASSETS_BUCKET if downloadable)
 iceland-2025/001/2400.avif  2400.jpg   # desktop lightbox
-iceland-2025/001/1200.avif  1200.jpg   # mid / mobile lightbox + OG preview (use the .jpg)
+iceland-2025/001/1200.avif  1200.jpg   # mid / mobile lightbox + OG preview (use .jpg)
 iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 ```
 
-**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Cloudflare's image binding; strips metadata (privacy-first default — protects GPS, also drops camera EXIF); PUTs variants to the public bucket and the original to the private bucket; updates the manifest; commits text to GitHub; pings the deploy hook.
+**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Cloudflare's image binding; strips all metadata (privacy-first — protects GPS, also drops camera EXIF); PUTs variants to ASSETS_BUCKET and original to ORIGINALS_BUCKET; updates the manifest; commits text to GitHub; pings the deploy hook.
 
-**Downloadable originals:** the original lives in the private bucket. Marking a photo `downloadable` copies it into the public bucket ("copy-to-public" — no Worker in the download path); un-publishing deletes the public copy and purges the CDN cache. The original also serves as the **reprocessing master** if the variant sizes ever change.
+**Downloadable originals:** the original lives in ORIGINALS_BUCKET. Marking a photo `downloadable` copies it into ASSETS_BUCKET; un-marking deletes the public copy and purges the CDN cache. No Worker sits in the download path — the original is a plain CDN object once public.
 
 ---
 
-## Admin API (target — to be (re)built on the Worker)
+## Admin API
 
 | Method | Path | Description |
 |---|---|---|
@@ -164,39 +183,37 @@ iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
 | POST | `/api/deploy` | Commit manifest changes → GitHub + ping Pages deploy hook |
 
-The existing Express routes in the old `server.js` are the reference shape; the Worker rewrite swaps filesystem + local-Hugo for R2 + deploy-hook.
+All routes implemented in `functions/api/[[route]].js` (currently stubbed 501 → Phase 2).
 
 ---
 
 ## Hugo template notes
 
-- **No build-time image processing.** Templates read the `photos` manifest and emit `srcset` URLs at `{{ .Site.Params.assetsBaseURL }}/<key>/<size>.<fmt>` — they no longer use `.Resources`, `.Fill`, or `.Resize`.
+- **No build-time image processing.** Templates read the `photos` manifest and emit `srcset` URLs at `{{ .Site.Params.assetsBaseURL }}/<key>/<size>.<fmt>` → `/assets/...` — they do not use `.Resources`, `.Fill`, or `.Resize`.
+- **og:image / twitter:image** must be absolute. `og.html` uses `absURL` on the root-relative asset path to produce `https://photos.ctsmith.org/assets/<key>/1200.jpg`. (Always JPEG, never AVIF — unfurlers don't render AVIF.)
 - **Homepage** (`index.html`): lists series via `(site.GetPage "/projects").Sections`; cover = manifest `cover` id → `<key>/600.jpg`; photo count = `len .Params.photos`.
-- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400, with 1200 for mobile). First 6 eager, rest lazy. Conditional "Download original" link when a photo is downloadable.
-- **Per-photo permalink** (`projects/single.html`): page at `/projects/<slug>/<id>/` with Open Graph tags. **`og:image` must point at the JPEG variant (1200.jpg), not AVIF** — most link unfurlers don't render AVIF. **Resolved at scaffold:** series are branch bundles and each photo is a stub `<id>.md`; the `getphoto.html` partial resolves the photo from the parent manifest, keeping the manifest the single source of truth.
-- **Tailwind**: theme uses `group` / `group-hover:`; custom utilities (`scale-102`, `scale-103`, `duration-400`) in `tailwind.config.js`.
+- **Series page** (`projects/section.html`): grid thumbnails (600) + PhotoSwipe full (2400). First 6 eager, rest lazy.
+- **Per-photo permalink** (`projects/single.html`): `/projects/<slug>/<id>/` with OG tags + prev/next + conditional download link.
 - Run Hugo as `hugo --source site` from repo root.
 
 ---
 
 ## Logging
 
-The admin is serverless, so logs go to Cloudflare, not a local file:
-
 ```bash
-npx wrangler tail        # live admin Worker logs
+npx wrangler tail        # live Pages Function logs (production)
 ```
 
-(During local `wrangler dev`, logs print to the terminal.) This replaces the old `logs/admin.log`.
+During local `wrangler pages dev`, logs print to the terminal.
 
 ---
 
 ## Security model
 
-- **Cloudflare Access** gates the admin natively. Because the admin is a Worker/Pages Function, there's no separately-addressable origin to hit directly and bypass the login.
-- **Public R2 bucket** serves only finished web variants + originals explicitly marked downloadable. **Private R2 bucket** (no public domain) holds all originals; reachable only via the admin's R2 credentials.
+- **Cloudflare Access** gates `/admin*` and `/api*` natively on `photos.ctsmith.org`. Because these are Pages Functions, there's no separately-addressable origin to bypass.
+- **ASSETS_BUCKET** (public) serves only finished web variants + originals explicitly marked downloadable. **ORIGINALS_BUCKET** (private, no public domain) holds all originals.
 - **Scoped GitHub token** for the admin's metadata commits — limited to this repo.
-- **Metadata stripped** from published files by default (no GPS leaks).
+- **All metadata stripped** from published files by default (no GPS leaks).
 - RAW originals never enter the pipeline; they stay on the personal backup drive.
 
 ---
@@ -206,8 +223,8 @@ npx wrangler tail        # live admin Worker logs
 | Task | Tool |
 |---|---|
 | New features, redesigns, architecture decisions | **Cowork** |
-| Live dev loop: template edits, CSS tweaks, Worker/Hugo debugging | **Claude Code** in terminal |
-| Upload photos, manage series | **Admin UI** (`admin.ctsmith.org`) |
+| Live dev loop: template edits, CSS tweaks, Functions debugging | **Claude Code** in terminal |
+| Upload photos, manage series | **Admin UI** (`photos.ctsmith.org/admin`) |
 | Git commits, running scripts, installing packages, `wrangler` deploys | **Claude Code** |
 | Updating this CLAUDE.md | Whoever makes the change |
 
@@ -217,53 +234,44 @@ npx wrangler tail        # live admin Worker logs
 
 ## Known issues / TODO
 
-- [ ] **Confirm Cloudflare Containers availability** on the account — only needed if we want "keep camera EXIF, strip GPS" (otherwise the Worker + strip-all path stands).
-- [ ] Configure hostnames: `admin.` / `assets.` / `photos.` (currently TBD).
-- [ ] Decide per-photo page generation approach (stub content file vs. build step).
+- [ ] **Confirm Cloudflare Containers availability** — only needed if we want "keep camera EXIF, strip GPS"; otherwise Worker + strip-all path stands.
 - [ ] Wire EXIF/GPS handling per the chosen compute path.
-- [ ] Drag-to-reorder photos in the admin (manifest array order makes this clean now).
+- [ ] Drag-to-reorder photos in the admin (manifest array order makes this clean).
 - [ ] Delete retired files once migration is proven (`Caddyfile`, Mac setup scripts).
+- [ ] Keep `site/static/admin/index.html` in sync with `admin/public/index.html` until the old server.js is fully retired.
 
 ---
 
 ## Open decisions (see DEPLOYMENT-PLAN.md §10)
 
-1. **Admin compute — DECIDED:** Cloudflare Worker + image-transform binding. Fallback for EXIF/portability: Cloudflare Container running Sharp + exiftool (pending availability check).
-2. **Originals — DECIDED:** copy-to-public via two R2 buckets; no Worker in the download path.
+1. **Admin compute — DECIDED:** Cloudflare Pages Functions + image-transform binding.
+2. **Originals — DECIDED:** copy-to-public via two R2 buckets; no Function in the download path.
 3. **Variant sizes — DECIDED:** 600 / 1200 / 2400 px.
 4. **Format / metadata — DECIDED (reversible):** AVIF + JPEG; strip all metadata by default.
-5. **Hostnames — TBD.**
+5. **Hostnames — DECIDED:** single hostname `photos.ctsmith.org`; paths `/admin`, `/api/*`, `/assets/*`.
 
 ---
 
-## Current state (last updated: 2026-05-21)
+## Current state (last updated: 2026-05-22)
 
-- **Architecture redesigned and agreed** — decoupled, all-Cloudflare. Plan written to `DEPLOYMENT-PLAN.md`. **Next step: scaffold Phases 0–1.**
-- Existing assets to carry forward: Hugo site + custom theme (monospace/catalog aesthetic), Tailwind config, the admin UI HTML, the `git push`-based deploy idea (now → deploy hook).
-- Existing code to rewrite: `admin/server.js` (filesystem + local Hugo) → Worker (R2 + deploy hook); `single.html` / `index.html` (Hugo image processing) → manifest-driven R2 `srcset`; front-matter parser → real YAML (`gray-matter` / `js-yaml`) to handle the `photos[]` list.
-- Cloudflare Pages was already connected to the repo (builds on push) — keep and use it.
-- Large source photos already removed from the repo — good; they'll be re-uploaded via the new admin into R2.
+### Phase 1 — DONE (committed + pushed)
+Hugo refactored: manifest-driven templates, per-photo permalinks, no build-time image processing, Iceland 2025 fixture. assetsBaseURL changed to `/assets` (same-origin). og:image absolute via `absURL`. Admin UI copied to `site/static/admin/index.html` (served at `/admin` by Pages).
 
-### Handoff — next session (start Phase 0–1)
+### Phase 1.5 — DONE (this session)
+Single-host refactor + Pages Functions skeleton:
+- `site/hugo.toml`: `assetsBaseURL = "/assets"`
+- `partials/og.html`: `absURL` for og:image/twitter:image
+- `site/static/admin/index.html`: admin UI in Hugo static output (served at `/admin`)
+- `functions/assets/[[path]].js`: real R2 stream logic (ASSETS_BUCKET binding required)
+- `functions/api/[[route]].js`: full route table stubbed with 501 + TODO comments
+- `functions/_lib/env.js`: binding/var registry
+- `.dev.vars.example`: documents all required vars for local dev
 
-**Phase 1 (Hugo refactor) was scaffolded in Cowork on 2026-05-21** — status below. Phase 0 (Cloudflare account setup) and Phase 2 (admin → Worker) are still open. For a fresh start:
+### Phase 0 — OPEN (needs Cloudflare/GitHub account)
+Create ASSETS_BUCKET and ORIGINALS_BUCKET R2 buckets; configure Pages deploy hook; create Cloudflare Access application gating `/admin*` and `/api*`; create scoped GitHub token; wire all bindings/secrets into the Pages project.
 
-- **Read first:** this file, then `DEPLOYMENT-PLAN.md` §3 (data model), §4–§5a (pipeline / originals / permalinks), §7 (phases).
-- **Best entry point: Phase 1** (Hugo refactor) — it's pure local code (swap the front-matter parser to real YAML, make `single.html` / `index.html` manifest-driven, add the `photo.html` permalink layout) with **no Cloudflare account needed**, so it's safe to do first and verify against a hand-written sample `index.md`.
-- **Phase 0** (create the two R2 buckets, the Pages deploy hook, the Access app, a scoped GitHub token) needs the owner's Cloudflare/GitHub account actions — do alongside or after Phase 1.
-- **Do NOT** reintroduce photos into git, Hugo build-time image processing, or any Mac/launchd/Caddy/cloudflared pieces.
+### Phase 2 — OPEN (implement the Functions)
+Replace 501 stubs in `functions/api/[[route]].js` with real logic: resize via IMAGES binding → PUT to R2 → update manifest → commit to GitHub → ping deploy hook. Wire downloadable copy-to-public/purge logic. Reference: `admin/server.js` (old Express implementation).
 
-### Phase 1 scaffold status (2026-05-21, done in Cowork)
-
-**Done — local code, no Cloudflare account needed:**
-- `hugo.toml`: added `assetsBaseURL`, set `baseURL` to the production domain (absolute OG URLs), removed the `[imaging]` block.
-- Series converted to **branch bundles**. Sample series `iceland-2025` (3 photos + per-photo stubs) added as a build fixture — R2 keys are placeholders, so images won't load locally until R2 + hostnames exist.
-- Templates rewritten manifest-driven: `index.html`, `projects/section.html` (series grid + PhotoSwipe), `projects/single.html` (per-photo permalink + prev/next + conditional download), partials `og.html` and `getphoto.html`; `head.html` wired for OG tags + per-photo titles.
-
-**Still to do (needs a machine with network / Cloudflare):**
-- **Verify the build locally:** `npm run build` then `hugo --source site` — the Cowork sandbox has no network to fetch Hugo, so templates are reviewed but the build hasn't been run.
-- **Remove leftover test content:** `git rm -r site/content/projects/sample-series site/content/projects/test-2026` (includes a committed PNG). The sandbox couldn't delete these; they don't break the build but render as orphan "Photo not found" pages until removed.
-- Phase 2 (admin → Worker) and Phase 0 (Cloudflare R2 / Pages / Access setup) remain open.
-
-### Retired (no longer relevant under the new architecture)
-The Mac-Mini hosting stack — Caddy, `cloudflared` tunnel, launchd services, the `sauron` server account, and the **macOS Sequoia BTM / launchd autostart blocker** that consumed the prior debugging effort — is all moot now that the admin is serverless and the gallery is served by Cloudflare Pages. (Detail preserved in git history if ever needed.)
+### Retired (no longer relevant)
+The Mac-Mini hosting stack — Caddy, `cloudflared` tunnel, launchd services, the `sauron` server account, and the macOS Sequoia BTM autostart debugging — is all moot. Detail preserved in git history.

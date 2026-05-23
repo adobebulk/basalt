@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Photo Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset ──────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --green:    #1a5432;
+      --green-bg: #f0f7f3;
+      --red:      #8b1a1a;
+      --red-bg:   #fdf0f0;
+      --yellow-bg:#fffbe6;
+      --border:   #c8c8c4;
+      --border-light: #e4e4e0;
+      --bg:       #ffffff;
+      --text:     #111110;
+      --muted:    #666662;
+      --mono:     "JetBrains Mono", "Berkeley Mono", "Courier New", monospace;
+      --font-size: 13px;
+    }
+
+    html { font-size: var(--font-size); -webkit-font-smoothing: antialiased; }
+    body { font-family: var(--mono); background: var(--bg); color: var(--text); min-height: 100svh; }
+    a { color: var(--green); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { font-family: var(--mono); font-size: var(--font-size); cursor: pointer; border: none; background: none; }
+
+    /* ── Layout ─────────────────────────────────────────────── */
+    .page { max-width: 860px; margin: 0 auto; padding: 0 16px 80px; }
+
+    /* ── Header ─────────────────────────────────────────────── */
+    .topbar {
+      border-bottom: 1px solid var(--border);
+      padding: 10px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 16px; }
+    .site-name { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+    .topbar-nav { display: flex; gap: 0; }
+    .topbar-nav button {
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      font-size: 12px;
+      background: var(--bg);
+      color: var(--text);
+      margin-left: -1px;
+      cursor: pointer;
+    }
+    .topbar-nav button:hover { background: #f5f5f4; }
+    .topbar-nav button:first-child { border-radius: 2px 0 0 2px; }
+    .topbar-nav button:last-child  { border-radius: 0 2px 2px 0; }
+
+    /* ── Green action button ─────────────────────────────────── */
+    .btn-action {
+      display: inline-block;
+      background: var(--green);
+      color: #fff;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      font-weight: 600;
+      border: 1px solid var(--green);
+      border-radius: 2px;
+      cursor: pointer;
+      white-space: nowrap;
+      letter-spacing: .02em;
+    }
+    .btn-action:hover { background: #143f27; border-color: #143f27; text-decoration: none; }
+    .btn-action:active { opacity: .85; }
+    .btn-action[disabled] { opacity: .4; pointer-events: none; }
+
+    /* Outline variant */
+    .btn-outline {
+      display: inline-block;
+      background: transparent;
+      color: var(--text);
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .btn-outline:hover { background: #f5f5f4; }
+
+    /* Danger */
+    .btn-danger {
+      background: transparent;
+      color: var(--red);
+      padding: 5px 12px;
+      font-size: 12px;
+      font-family: var(--mono);
+      border: 1px solid #d8a0a0;
+      border-radius: 2px;
+      cursor: pointer;
+    }
+    .btn-danger:hover { background: var(--red-bg); }
+
+    /* ── Section heading ─────────────────────────────────────── */
+    .section-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 6px;
+      margin-bottom: 0;
+    }
+    .section-head h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Table ───────────────────────────────────────────────── */
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--border);
+      background: #fafaf9;
+    }
+    tbody tr { border-bottom: 1px solid var(--border-light); cursor: pointer; }
+    tbody tr:hover { background: #fafaf9; }
+    tbody td { padding: 9px 10px; vertical-align: middle; }
+    tbody tr:last-child { border-bottom: none; }
+
+    .table-wrap { border: 1px solid var(--border); border-radius: 2px; overflow: hidden; }
+
+    /* ── Slug badge ──────────────────────────────────────────── */
+    .slug-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 6px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: #fafaf9;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Status badge ────────────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 2px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .badge-draft { border: 1px solid #c8a000; color: #7a5f00; background: var(--yellow-bg); }
+    .badge-live  { border: 1px solid #2a7a4f; color: var(--green); background: var(--green-bg); }
+
+    /* ── Divider ─────────────────────────────────────────────── */
+    .divider { height: 1px; background: var(--border-light); margin: 28px 0; }
+
+    /* ── Modal overlay ──────────────────────────────────────── */
+    .overlay {
+      position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,.35);
+      display: flex; align-items: flex-end; justify-content: center;
+    }
+    .overlay.hidden { display: none; }
+
+    .sheet {
+      background: var(--bg);
+      border-top: 2px solid var(--border);
+      width: 100%; max-width: 860px;
+      max-height: 92svh; overflow-y: auto;
+      padding: 0 0 48px;
+    }
+
+    .sheet-header {
+      position: sticky; top: 0;
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 10;
+    }
+    .sheet-title { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
+    .sheet-close {
+      font-size: 14px; color: var(--muted);
+      border: 1px solid var(--border); border-radius: 2px;
+      padding: 2px 8px; cursor: pointer; background: var(--bg);
+      font-family: var(--mono);
+    }
+    .sheet-close:hover { background: #f5f5f4; }
+
+    .sheet-body { padding: 20px; display: flex; flex-direction: column; gap: 20px; }
+
+    /* ── Form ────────────────────────────────────────────────── */
+    .field { display: flex; flex-direction: column; gap: 5px; }
+    .field label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+    .field input, .field textarea {
+      font-family: var(--mono); font-size: 13px;
+      padding: 8px 10px;
+      border: 1px solid var(--border); border-radius: 2px;
+      background: var(--bg); color: var(--text); width: 100%;
+    }
+    .field input:focus, .field textarea:focus {
+      outline: none; border-color: var(--green); box-shadow: 0 0 0 2px var(--green-bg);
+    }
+    .field textarea { min-height: 70px; resize: vertical; }
+
+    /* ── Upload zone ─────────────────────────────────────────── */
+    .upload-zone {
+      border: 1px dashed var(--border);
+      border-radius: 2px;
+      padding: 28px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .upload-zone:hover, .upload-zone.drag { border-color: var(--green); background: var(--green-bg); }
+    .upload-zone p { font-size: 12px; color: var(--muted); margin-top: 5px; }
+    .upload-zone strong { font-size: 13px; }
+
+    /* ── Photo grid in detail ────────────────────────────────── */
+    .photo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+    .photo-thumb { position: relative; aspect-ratio: 1; background: #f0f0ee; border: 1px solid var(--border-light); overflow: hidden; }
+    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-thumb-del {
+      position: absolute; top: 3px; right: 3px;
+      background: rgba(0,0,0,.6); color: #fff; border: none;
+      width: 20px; height: 20px; border-radius: 2px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 11px; cursor: pointer;
+      opacity: 0; transition: opacity .15s;
+      font-family: var(--mono);
+    }
+    .photo-thumb:hover .photo-thumb-del { opacity: 1; }
+
+    /* ── Rebuild bar ─────────────────────────────────────────── */
+    .rebuild-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+      background: var(--bg); border-top: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex; align-items: center; gap: 12px;
+      font-size: 12px; color: var(--muted);
+    }
+    .rebuild-bar .status { flex: 1; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #c8a000; flex-shrink: 0; }
+    .dot.idle { background: var(--green); }
+
+    /* ── Toast ───────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 52px; left: 50%; transform: translateX(-50%) translateY(8px);
+      background: var(--text); color: #fff;
+      border: 1px solid #333;
+      padding: 7px 16px; border-radius: 2px; font-size: 12px;
+      opacity: 0; transition: all .2s; pointer-events: none; white-space: nowrap; z-index: 999;
+    }
+    #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.error { background: var(--red); border-color: var(--red); }
+
+    /* ── Empty / loading ─────────────────────────────────────── */
+    .empty { padding: 32px 0; text-align: center; color: var(--muted); font-size: 12px; border: 1px solid var(--border-light); border-top: none; }
+
+    /* ── Spinner ─────────────────────────────────────────────── */
+    .spin { display: inline-block; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <div class="topbar">
+    <div class="topbar-left">
+      <span class="site-name">Photo Admin</span>
+      <div class="topbar-nav">
+        <button onclick="openNewProject()">+ New Series</button>
+        <button id="btn-rebuild" onclick="rebuild()"><span id="rebuild-icon">↻</span> Rebuild</button>
+        <button id="btn-deploy" onclick="deploy()">Deploy →</button>
+      </div>
+    </div>
+    <span style="font-size:11px;color:var(--muted)" id="rebuild-label">—</span>
+  </div>
+
+  <!-- Series table -->
+  <div class="section-head">
+    <h2>Series</h2>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th style="width:130px">Slug</th>
+          <th>Title</th>
+          <th style="width:70px;text-align:right">Photos</th>
+          <th style="width:70px">Status</th>
+          <th style="width:90px"></th>
+        </tr>
+      </thead>
+      <tbody id="project-tbody">
+        <tr><td colspan="5"><div class="empty">Loading…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- Rebuild bar -->
+<div class="rebuild-bar">
+  <div class="dot idle" id="rebuild-dot"></div>
+  <span class="status" id="rebuild-status">Site up to date</span>
+</div>
+
+<!-- ── New series sheet ──────────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-new" onclick="closeIfBackdrop(event,'overlay-new')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title">New Series</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-new')">close [esc]</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" id="new-title" placeholder="e.g. Iceland 2025" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Description</label>
+        <textarea id="new-desc" placeholder="Short description shown on the project page…"></textarea>
+      </div>
+      <div>
+        <button class="btn-action" onclick="createProject()">Create series →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Project detail sheet ──────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-detail" onclick="closeIfBackdrop(event,'overlay-detail')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title" id="detail-title">—</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-detail')">close [esc]</button>
+    </div>
+    <div class="sheet-body" id="detail-body"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────
+let projects = [];
+
+// ── Init ─────────────────────────────────────────────────────────
+loadProjects();
+setRebuildStatus('idle', 'Site up to date');
+
+// ── API ──────────────────────────────────────────────────────────
+async function api(method, path, body, isForm) {
+  const opts = { method };
+  if (body && !isForm) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
+  else if (isForm) { opts.body = body; }
+  const res = await fetch('/api' + path, opts);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
+}
+
+function toast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show' + (isError ? ' error' : '');
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.className = '', 2800);
+}
+
+// ── Project list ─────────────────────────────────────────────────
+async function loadProjects() {
+  projects = await api('GET', '/projects');
+  renderTable();
+}
+
+function renderTable() {
+  const tbody = document.getElementById('project-tbody');
+  if (!projects.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty">No series yet — click "+ New Series" to create one.</div></td></tr>`;
+    return;
+  }
+  tbody.innerHTML = projects.map(p => `
+    <tr onclick="openDetail('${p.slug}')">
+      <td><span class="slug-badge">${esc(p.slug)}</span></td>
+      <td>${esc(p.title)}</td>
+      <td style="text-align:right;color:var(--muted)">${p.photoCount}</td>
+      <td><span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span></td>
+      <td style="text-align:right"><button class="btn-action" onclick="openDetail('${p.slug}');event.stopPropagation()">Open →</button></td>
+    </tr>
+  `).join('');
+}
+
+// ── New project ───────────────────────────────────────────────────
+function openNewProject() {
+  document.getElementById('new-title').value = '';
+  document.getElementById('new-desc').value = '';
+  openSheet('overlay-new');
+  setTimeout(() => document.getElementById('new-title').focus(), 150);
+}
+
+async function createProject() {
+  const title = document.getElementById('new-title').value.trim();
+  if (!title) { toast('Title is required', true); return; }
+  try {
+    await api('POST', '/projects', { title, description: document.getElementById('new-desc').value.trim() });
+    closeSheet('overlay-new');
+    await loadProjects();
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(`"${title}" created`);
+  } catch(e) { toast(e.message, true); }
+}
+
+// ── Project detail ────────────────────────────────────────────────
+async function openDetail(slug) {
+  const p = projects.find(x => x.slug === slug);
+  if (!p) return;
+  document.getElementById('detail-title').textContent = p.slug;
+  document.getElementById('detail-body').innerHTML = `<div style="color:var(--muted);font-size:12px">Loading…</div>`;
+  openSheet('overlay-detail');
+  const photos = await api('GET', `/projects/${slug}/photos`);
+  renderDetail(p, photos);
+}
+
+function renderDetail(p, photos) {
+  document.getElementById('detail-body').innerHTML = `
+
+    <!-- Status row -->
+    <div style="display:flex;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--border-light)">
+      <span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span>
+      <span style="font-size:12px;color:var(--muted)">${photos.length} photo${photos.length !== 1 ? 's' : ''}</span>
+      <div style="flex:1"></div>
+      <button class="btn-action" onclick="togglePublish('${p.slug}', ${p.draft})">
+        ${p.draft ? 'Publish →' : 'Unpublish →'}
+      </button>
+    </div>
+
+    <!-- Photos -->
+    ${photos.length ? `
+      <div>
+        <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Photos</div>
+        <div class="photo-grid" id="photo-grid-${p.slug}">
+          ${photos.map(f => `
+            <div class="photo-thumb" id="thumb-${p.slug}-${esc(f)}">
+              <img src="/photos/${p.slug}/${esc(f)}" loading="lazy" onerror="this.style.display='none'">
+              <button class="photo-thumb-del" onclick="deletePhoto('${p.slug}','${esc(f)}',event)" title="Delete">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    ` : ''}
+
+    <!-- Upload -->
+    <div class="upload-zone" id="drop-${p.slug}"
+         onclick="document.getElementById('file-${p.slug}').click()"
+         ondragover="dragOver(event,this)" ondragleave="dragLeave(this)" ondrop="dropFiles(event,'${p.slug}',this)">
+      <strong>Add photos</strong>
+      <p>Click to choose files · or drag & drop · JPG, PNG, WEBP, AVIF</p>
+      <input type="file" id="file-${p.slug}" accept="image/*" multiple style="display:none"
+             onchange="uploadFiles(this.files,'${p.slug}')">
+    </div>
+
+    <!-- Metadata -->
+    <div style="display:flex;flex-direction:column;gap:12px">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Details</div>
+      <div class="field"><label>Title</label><input type="text" id="edit-title-${p.slug}" value="${esc(p.title)}"></div>
+      <div class="field"><label>Description</label><textarea id="edit-desc-${p.slug}">${esc(p.description)}</textarea></div>
+      <div><button class="btn-outline" onclick="saveMetadata('${p.slug}')">Save details →</button></div>
+    </div>
+
+  `;
+}
+
+async function deletePhoto(slug, filename, e) {
+  e.stopPropagation();
+  if (!confirm(`Delete ${filename}?`)) return;
+  await api('DELETE', `/projects/${slug}/photos/${filename}`);
+  document.getElementById(`thumb-${slug}-${filename}`)?.remove();
+  setRebuildStatus('dirty', 'Rebuild needed');
+  toast('Deleted ' + filename);
+}
+
+async function uploadFiles(files, slug) {
+  if (!files.length) return;
+  const zone = document.getElementById(`drop-${slug}`);
+  zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${files.length} file${files.length > 1 ? 's' : ''}…</strong>`;
+  const fd = new FormData();
+  for (const f of files) fd.append('photos', f);
+  try {
+    const res = await api('POST', `/projects/${slug}/photos`, fd, true);
+    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
+    setRebuildStatus('dirty', 'Rebuild needed');
+    const p = projects.find(x => x.slug === slug);
+    const photos = await api('GET', `/projects/${slug}/photos`);
+    renderDetail(p, photos);
+  } catch(e) { toast(e.message, true); zone.innerHTML = `<strong>Add photos</strong><p>Click to choose files · or drag & drop</p>`; }
+}
+
+function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
+function dragLeave(el) { el.classList.remove('drag'); }
+function dropFiles(e, slug, el) { e.preventDefault(); el.classList.remove('drag'); uploadFiles(e.dataTransfer.files, slug); }
+
+async function saveMetadata(slug) {
+  const title = document.getElementById(`edit-title-${slug}`).value.trim();
+  const description = document.getElementById(`edit-desc-${slug}`).value.trim();
+  await api('PATCH', `/projects/${slug}`, { title, description });
+  await loadProjects();
+  setRebuildStatus('dirty', 'Rebuild needed');
+  toast('Saved');
+}
+
+async function togglePublish(slug, isDraft) {
+  await api('POST', `/projects/${slug}/publish`, { draft: !isDraft });
+  await loadProjects();
+  closeSheet('overlay-detail');
+  setRebuildStatus('dirty', 'Rebuild needed');
+  toast(isDraft ? 'Published' : 'Moved to draft');
+}
+
+// ── Rebuild ───────────────────────────────────────────────────────
+function setRebuildStatus(state, msg) {
+  document.getElementById('rebuild-dot').className = 'dot' + (state === 'idle' ? ' idle' : '');
+  document.getElementById('rebuild-status').textContent = msg;
+  document.getElementById('rebuild-label').textContent = msg;
+}
+
+async function rebuild() {
+  const icon = document.getElementById('rebuild-icon');
+  icon.className = 'spin'; icon.textContent = '↻';
+  document.getElementById('btn-rebuild').disabled = true;
+  setRebuildStatus('building', 'Building…');
+  try {
+    await api('POST', '/rebuild');
+    setRebuildStatus('idle', 'Site rebuilt ✓');
+    toast('Site rebuilt successfully');
+  } catch(e) {
+    setRebuildStatus('error', 'Build failed');
+    toast('Build failed: ' + e.message, true);
+  }
+  icon.className = ''; icon.textContent = '↻';
+  document.getElementById('btn-rebuild').disabled = false;
+}
+
+// ── Deploy ────────────────────────────────────────────────────────
+async function deploy() {
+  if (!confirm('Commit content changes and push to GitHub? Cloudflare Pages will build and deploy automatically.')) return;
+  const btn = document.getElementById('btn-deploy');
+  btn.disabled = true; btn.textContent = '↻ Deploying…';
+  setRebuildStatus('building', 'Pushing to GitHub…');
+  try {
+    const res = await api('POST', '/deploy');
+    setRebuildStatus('idle', 'Deployed ✓ — CF Pages is building');
+    toast(res.message || 'Deployed!');
+  } catch(e) {
+    setRebuildStatus('error', 'Deploy failed');
+    toast('Deploy failed: ' + e.message, true);
+  }
+  btn.disabled = false; btn.textContent = 'Deploy →';
+}
+
+// ── Sheet helpers ─────────────────────────────────────────────────
+function openSheet(id) { document.getElementById(id).classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
+function closeSheet(id) { document.getElementById(id).classList.add('hidden'); document.body.style.overflow = ''; }
+function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) closeSheet(id); }
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  ['overlay-detail', 'overlay-new'].forEach(id => {
+    if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
+  });
+});
+
+// ── Util ──────────────────────────────────────────────────────────
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+</script>
+</body>
+</html>

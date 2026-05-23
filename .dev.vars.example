@@ -1,0 +1,13 @@
+# Local dev environment variables for `npx wrangler pages dev`.
+# Copy this file to .dev.vars and fill in real values.
+# .dev.vars is gitignored — never commit real secrets.
+#
+# NOTE: R2 bindings (ASSETS_BUCKET, ORIGINALS_BUCKET) and the IMAGES binding
+# cannot be set as plain vars — they are wrangler bindings configured via
+# wrangler.toml or the Pages dashboard. For local R2 dev, use:
+#   npx wrangler pages dev site/public --r2 ASSETS_BUCKET=<local-bucket-name>
+# Production bindings are configured in the Cloudflare Pages project during Phase 0.
+
+GITHUB_TOKEN=ghp_your_scoped_token_here
+GITHUB_REPO=adobebulk/static-photos
+DEPLOY_HOOK_URL=https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/your-hook-id

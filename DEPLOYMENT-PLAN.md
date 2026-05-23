@@ -142,16 +142,28 @@ Implementation notes (and the minor downsides):
 
 ## 6. Hosting & services
 
+**Single-hostname decision (2026-05-22):** everything is served from `photos.ctsmith.org` via one Cloudflare Pages project. No `admin.` or `assets.` subdomains. Path routing:
+
+| Path | Served by |
+|---|---|
+| `/` + gallery pages | Hugo static output (Pages CDN) |
+| `/admin` | Static admin UI HTML (in `site/static/admin/`) |
+| `/api/*` | Pages Function — gated by Cloudflare Access |
+| `/assets/*` | Pages Function — streams from R2, edge-cached |
+
+*Trade-off vs a dedicated `assets.` subdomain:* the `/assets/*` Function adds one Function invocation per image request until the edge cache warms; after that it's pure CDN. The `/assets/*` scheme also prevents a subdomain cookie scope issue and keeps the entire project on one Pages project with zero DNS juggling. Reversible: if asset traffic ever warrants a dedicated domain, update `assetsBaseURL` in `hugo.toml` and add a CNAME — no template changes needed.
+
 | Concern | Choice | Notes |
 |---|---|---|
-| Static gallery | **Cloudflare Pages** | Already connected to the repo. Builds Hugo on push + on deploy-hook. No image processing now, so builds are seconds. |
-| Image/asset storage | **Cloudflare R2** | Bucket `static-photos-assets`, public custom domain `assets.ctsmith.org` for variants. No egress fees — downloads cost nothing. |
-| Admin panel | **Cloudflare Worker / Pages Function** | Serverless — no host to keep alive, scales to zero, no new vendor. Resizing via Cloudflare's image-transform binding. (Cloudflare Containers is the alt if we want Sharp — see §10.) |
-| Auth | **Cloudflare Access** | Self-hosted application on `admin.ctsmith.org`. Login required before the admin code runs. |
-| Originals | **Two R2 buckets** | Public (variants + public originals) and private (originals). Copy-to-public on toggle — no Worker in the path (see §5). |
-| Deploy trigger | **Pages deploy hook** | The admin "Rebuild" button POSTs to the hook URL. |
+| Static gallery + admin UI | **Cloudflare Pages** | Already connected to the repo. Builds Hugo on push + on deploy-hook. |
+| Asset serving | **Pages Function `/assets/*`** | Streams from `ASSETS_BUCKET` R2; `Cache-Control: immutable`. |
+| Asset storage | **Cloudflare R2** | Two buckets: `ASSETS_BUCKET` (public variants + public originals) + `ORIGINALS_BUCKET` (private originals). No egress fees. |
+| Admin backend | **Pages Functions `/api/*`** | Serverless. Resizing via Cloudflare's image-transform binding (`IMAGES`). |
+| Auth | **Cloudflare Access** | Gates `/admin*` and `/api*` on `photos.ctsmith.org`. |
+| Originals | **Two R2 buckets** | Copy-to-public on toggle — no Function in the download path (see §5). |
+| Deploy trigger | **Pages deploy hook** | The admin "Rebuild" button POSTs to `DEPLOY_HOOK_URL`. |
 
-**Security note:** because the admin is a Cloudflare Worker / Pages Function, Cloudflare Access gates it natively — there's no separately-addressable origin (like a `*.fly.dev` host) for anyone to hit directly and bypass the login. That cleanly preserves the "never expose the admin without Access in front" rule from `CLAUDE.md`, with no extra hardening needed.
+**Security note:** Access gates `/admin*` and `/api*` natively — there's no separately-addressable origin to bypass. Gallery pages and `/assets/*` are intentionally public.
 
 ---
 
@@ -165,19 +177,26 @@ A real Linux home server (systemd + Docker) sidesteps the macOS Sequoia BTM auto
 
 ## 7. Implementation phases (suggested order)
 
-**Phase 0 — Cloudflare/GitHub prep (no code).** Create the R2 bucket + `assets.ctsmith.org` custom domain; create an R2 API token; confirm the Pages project and create a deploy hook; create the Access application for `admin.ctsmith.org`; create a scoped GitHub token for the admin's metadata commits.
+**Phase 0 — Cloudflare/GitHub prep (no code). OPEN.**
+Create `ASSETS_BUCKET` and `ORIGINALS_BUCKET` R2 buckets (no public custom domain needed — served via the `/assets/*` Function); confirm the Pages project and create a deploy hook (`DEPLOY_HOOK_URL`); create the Cloudflare Access application gating `/admin*` and `/api*` on `photos.ctsmith.org`; create a scoped GitHub token (`GITHUB_TOKEN`) for the admin's metadata commits; wire all bindings + secrets into the Pages project (dashboard or `wrangler.toml`).
 
-**Phase 1 — Repo / Hugo refactor.** Replace the front-matter parser with `gray-matter`/`js-yaml`. Add `assetsBaseURL` to `hugo.toml` params. Rewrite `single.html` to render the `photos` manifest as `srcset` + PhotoSwipe from R2 URLs, with the conditional download link. Rewrite `index.html` cover/count logic to read the manifest instead of `.Resources`. Add a per-photo permalink layout that outputs `/projects/<slug>/<id>/` pages with Open Graph tags (preview image = the JPEG variant). Verify a hand-written sample `index.md` builds correctly.
+**Phase 1 — Repo / Hugo refactor. DONE (2026-05-21/22).**
+Manifest-driven templates, per-photo permalinks, `assetsBaseURL = "/assets"`, og:image absolute via `absURL`. Admin UI at `site/static/admin/index.html`. Functions skeleton scaffolded.
 
-**Phase 2 — Admin rewrite (as a Worker / Pages Function).** Port the admin logic to a Worker with R2 bindings. Replace filesystem writes with: resize via the image-transform binding → PUT variants to the public bucket and original to the private bucket → update the `index.md` manifest → commit/push text to GitHub (scoped token). Add per-photo `caption` + `downloadable` editing and reordering. Repoint the "Rebuild" button at the Pages deploy hook (keep a local Hugo preview for laptop dev). Keep the existing admin HTML/UI — it just talks to the new endpoints. *(If we choose Cloudflare Containers in §10, this same logic ships as a container running Sharp + exiftool instead.)*
+**Phase 1.5 — Single-host refactor + Functions skeleton. DONE (2026-05-22).**
+`assetsBaseURL` changed to `/assets`; og:image made absolute; admin UI moved to Hugo static; `functions/assets/[[path]].js` (real R2 logic), `functions/api/[[route]].js` (stubbed 501), `functions/_lib/env.js`, `.dev.vars.example` all added.
 
-**Phase 3 — Deploy & gate.** Deploy the admin Worker/Pages Function and set secrets (R2 creds, GitHub token, deploy-hook URL). Wire `admin.ctsmith.org` and the Cloudflare Access application in front of it.
+**Phase 2 — Implement the Functions. OPEN.**
+Replace 501 stubs in `functions/api/[[route]].js` with real logic: resize via `IMAGES` binding → PUT to R2 → update `_index.md` manifest → commit to GitHub via `GITHUB_TOKEN` → ping `DEPLOY_HOOK_URL`. Wire `downloadable` copy-to-public / CDN purge in `PATCH /api/projects/:slug/photos/:id`. Reference: `admin/server.js` (old Express implementation is the shape to port).
 
-**Phase 4 — Originals access.** Create the private bucket, wire the copy-to-public action on the `downloadable` toggle, and add a CDN cache purge on un-publish.
+**Phase 3 — Deploy & verify. OPEN.**
+Deploy via `wrangler pages deploy` or push to main (Pages auto-builds). Confirm `/api/*` returns real data; `/assets/*` streams from R2; `/admin` is Access-gated; gallery pages are public.
 
-**Phase 5 — Cutover.** Re-upload your series through the new admin (originals + variants land in R2; manifests commit to git). Confirm the live site on Pages. Point `photos.ctsmith.org` at Pages. Decommission the Mac from the serving/admin path.
+**Phase 4 — Cutover. OPEN.**
+Re-upload series through the new admin (variants → `ASSETS_BUCKET`; originals → `ORIGINALS_BUCKET`; manifests commit to git). Point `photos.ctsmith.org` at Pages. Decommission the Mac.
 
-**Phase 6 — Cleanup.** Delete dead infrastructure (see §8) and update `CLAUDE.md` to describe the new architecture.
+**Phase 5 — Cleanup. OPEN.**
+Delete dead infrastructure (see §8); update CLAUDE.md final state.
 
 ---
 
@@ -205,4 +224,4 @@ Roughly **$0–3/month total.** Pages is free. R2 storage is ~$0.015/GB-month wi
 2. **Originals — DECIDED:** copy-to-public via two R2 buckets; no Worker in the path.
 3. **Variant sizes — DECIDED:** 600 / 1200 / 2400 px, reprocessable later from the R2 originals.
 4. **Format & metadata — DECIDED (reversible):** AVIF + JPEG, no WebP. Published files have **all metadata stripped** by default (privacy-first; protects GPS). To instead keep camera EXIF and strip only GPS, choose the Containers option in (1).
-5. **Hostnames — TBD:** `admin.` / `assets.` / `photos.` to be configured later.
+5. **Hostnames — DECIDED (2026-05-22):** single hostname `photos.ctsmith.org` only. No `admin.` or `assets.` subdomains. Paths: `/admin` (UI), `/api/*` (Functions, Access-gated), `/assets/*` (R2 stream Function, public). See §6 for trade-off notes.
