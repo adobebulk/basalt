@@ -18,4 +18,10 @@ photos:
     height: 0
     caption: ''
     downloadable: false
+  - id: '003'
+    key: demo-test/003
+    width: 0
+    height: 0
+    caption: ''
+    downloadable: false
 ---
