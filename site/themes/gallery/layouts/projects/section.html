@@ -116,7 +116,7 @@
       };
     });
 
-    // Show a "Full post →" link in the lightbox when the photo has body text.
+    // Show a "Full post →" button in the lightbox when the photo has body text.
     lightbox.on('uiRegister', function() {
       lightbox.pswp.ui.registerElement({
         name: 'photo-note-link',
@@ -126,26 +126,31 @@
         onInit: (el, pswp) => {
           el.style.cssText = [
             'position:absolute',
-            'bottom:72px',
-            'left:0',
-            'right:0',
-            'text-align:center',
+            'bottom:80px',
+            'left:50%',
+            'transform:translateX(-50%)',
             'z-index:100',
             'pointer-events:none',
-            'transition:opacity .2s',
+            'white-space:nowrap',
           ].join(';');
 
           const update = () => {
             const anchor = pswp.currSlide && pswp.currSlide.data && pswp.currSlide.data.element;
             if (anchor && anchor.dataset.hasBody === 'true') {
               el.innerHTML = '<a href="' + anchor.href + '" style="'
-                + 'color:rgba(255,255,255,.78);'
-                + 'font-size:12px;'
-                + 'letter-spacing:.03em;'
-                + 'text-decoration:underline;'
-                + 'pointer-events:auto;'
                 + 'display:inline-block;'
-                + 'padding:6px 12px;'
+                + 'pointer-events:auto;'
+                + 'background:rgba(255,255,255,0.15);'
+                + 'backdrop-filter:blur(8px);'
+                + '-webkit-backdrop-filter:blur(8px);'
+                + 'border:1px solid rgba(255,255,255,0.4);'
+                + 'color:#fff;'
+                + 'font-size:13px;'
+                + 'font-weight:600;'
+                + 'letter-spacing:.02em;'
+                + 'padding:10px 20px;'
+                + 'border-radius:4px;'
+                + 'text-decoration:none;'
                 + '">Full post →</a>';
             } else {
               el.innerHTML = '';
@@ -153,7 +158,6 @@
           };
 
           pswp.on('change', update);
-          // Also fire once the lightbox is ready in case change hasn't fired yet
           pswp.on('afterInit', update);
         }
       });

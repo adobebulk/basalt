@@ -150,7 +150,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.2**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **1.2.3**
 
 ---
 
@@ -311,12 +311,13 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-05-23)
 
-### v1.2.2 — CURRENT
+### v1.2.3 — CURRENT
 - Hero image: caption overlay from photo manifest; click always goes to photo permalink (derived from `heroPhotoKey`, not `heroLink`)
 - Photo permalink page: "← Series Title" back link; clicking the photo opens PhotoSwipe (single-item gallery, same pattern as series page); prev/next navigation
 - Admin: feature button on every photo card shows live state ("Featured ✓" badge + "Remove" when featured, "✦ Feature" when not); in-place UI update on toggle without panel reload; `panelSettings` cached per panel open; caption helper text below caption input
 - Fix: `serializeFrontMatter` now emits a blank line between closing `---` and body, so Hugo renders post body as markdown (was missing the blank line separator)
 - Fix: install `@tailwindcss/typography` plugin and wire into `tailwind.config.js` so `prose` classes (headings, lists, code blocks, etc.) actually render in post and photo body text
+- Fix: "Full post →" in PhotoSwipe lightbox is now a styled pill button (frosted glass, border, bold text) centered above the UI bar rather than a plain underlined link that could be missed
 
 ### v1.1.0
 - Lightbox "Full post →" link in PhotoSwipe when current photo has body text (`data-has-body` attribute + `uiRegister` hook)
