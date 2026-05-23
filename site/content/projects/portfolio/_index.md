@@ -48,4 +48,10 @@ photos:
     height: 2847
     caption: ''
     downloadable: false
+  - id: '008'
+    key: portfolio/008
+    width: 5820
+    height: 3880
+    caption: ''
+    downloadable: false
 ---
