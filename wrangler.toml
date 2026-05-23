@@ -12,7 +12,7 @@ pages_build_output_dir = "site/public"
 [vars]
 HUGO_VERSION = "0.161.1"
 # Keep in sync with package.json version
-PACKAGE_VERSION = "1.2.1"
+PACKAGE_VERSION = "1.2.2"
 GITHUB_REPO = "adobebulk/static-photos"
 DEPLOY_HOOK_URL = "https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/ea546758-7096-41e7-901f-f22723f7006d"
 ASSETS_R2_PUBLIC_URL = "https://r2.photos.ctsmith.org"
