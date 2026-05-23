@@ -26,8 +26,7 @@
           class="block overflow-hidden rounded-sm bg-stone-200 aspect-[3/2] cursor-zoom-in group"
           href="{{ $.RelPermalink }}{{ $p.id }}/"
           data-pswp-src="{{ $base }}/{{ $p.key }}/2400.jpg"
-          data-pswp-width="{{ $p.width }}"
-          data-pswp-height="{{ $p.height }}"
+          {{ if gt $p.width 0 }}data-pswp-width="{{ $p.width }}" data-pswp-height="{{ $p.height }}"{{ end }}
         >
           <img
             class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102"
@@ -85,10 +84,32 @@
       const el = itemData.element;
       if (el) {
         itemData.src = el.dataset.pswpSrc;
-        itemData.width = parseInt(el.dataset.pswpWidth, 10);
-        itemData.height = parseInt(el.dataset.pswpHeight, 10);
+        if (el.dataset.pswpWidth) itemData.width  = parseInt(el.dataset.pswpWidth, 10);
+        if (el.dataset.pswpHeight) itemData.height = parseInt(el.dataset.pswpHeight, 10);
       }
       return itemData;
+    });
+    lightbox.on('contentLoad', (e) => {
+      const { content } = e;
+      if (content.data.width && content.data.height) return;
+      e.preventDefault();
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = content.data.src;
+      img.onload = () => {
+        content.data.width  = img.naturalWidth;
+        content.data.height = img.naturalHeight;
+        content.element = img;
+        content.instance.invalidateCurrItems();
+        content.instance.updateSize(true);
+      };
+      img.onerror = () => {
+        content.data.width  = window.innerWidth;
+        content.data.height = window.innerWidth;
+        content.element = img;
+        content.instance.invalidateCurrItems();
+        content.instance.updateSize(true);
+      };
     });
     lightbox.init();
   </script>

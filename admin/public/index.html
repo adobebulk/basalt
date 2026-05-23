@@ -390,8 +390,14 @@ function toast(msg, isError) {
 
 // ── Project list ─────────────────────────────────────────────────
 async function loadProjects() {
-  projects = await api('GET', '/projects');
-  renderTable();
+  try {
+    projects = await api('GET', '/projects');
+    renderTable();
+  } catch(e) {
+    toast('Failed to load series: ' + e.message, true);
+    document.getElementById('project-tbody').innerHTML =
+      `<tr><td colspan="5"><div class="empty">Failed to load — ${esc(e.message)}</div></td></tr>`;
+  }
 }
 
 function renderTable() {
@@ -495,10 +501,12 @@ function renderDetail(p, photos) {
 async function deletePhoto(slug, filename, e) {
   e.stopPropagation();
   if (!confirm(`Delete ${filename}?`)) return;
-  await api('DELETE', `/projects/${slug}/photos/${filename}`);
-  document.getElementById(`thumb-${slug}-${filename}`)?.remove();
-  setRebuildStatus('dirty', 'Rebuild needed');
-  toast('Deleted ' + filename);
+  try {
+    await api('DELETE', `/projects/${slug}/photos/${filename}`);
+    document.getElementById(`thumb-${slug}-${filename}`)?.remove();
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Deleted ' + filename);
+  } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
 
 const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;   // 30 MB — above this, pre-compress
@@ -563,7 +571,7 @@ async function uploadFiles(files, slug) {
 
   try {
     const res = await api('POST', `/projects/${slug}/photos`, fd, true);
-    toast(`Uploaded ${res.added.length} photo${res.added.length > 1 ? 's' : ''}`);
+    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
     setRebuildStatus('dirty', 'Rebuild needed');
     const p = projects.find(x => x.slug === slug);
     const photos = await api('GET', `/projects/${slug}/photos`);
@@ -583,27 +591,33 @@ function dropFiles(e, slug, el) { e.preventDefault(); el.classList.remove('drag'
 async function saveMetadata(slug) {
   const title = document.getElementById(`edit-title-${slug}`).value.trim();
   const description = document.getElementById(`edit-desc-${slug}`).value.trim();
-  await api('PATCH', `/projects/${slug}`, { title, description });
-  await loadProjects();
-  setRebuildStatus('dirty', 'Rebuild needed');
-  toast('Saved');
+  try {
+    await api('PATCH', `/projects/${slug}`, { title, description });
+    await loadProjects();
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Saved');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
 async function togglePublish(slug, isDraft) {
-  await api('POST', `/projects/${slug}/publish`, { draft: !isDraft });
-  await loadProjects();
-  closeSheet('overlay-detail');
-  setRebuildStatus('dirty', 'Rebuild needed');
-  toast(isDraft ? 'Published' : 'Moved to draft');
+  try {
+    await api('POST', `/projects/${slug}/publish`, { draft: !isDraft });
+    await loadProjects();
+    closeSheet('overlay-detail');
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(isDraft ? 'Published' : 'Moved to draft');
+  } catch(e) { toast('Failed to update status: ' + e.message, true); }
 }
 
 async function deleteSeries(slug) {
   if (!confirm(`Delete series '${slug}' and all its photos? This cannot be undone.`)) return;
-  await api('DELETE', `/projects/${slug}`);
-  closeSheet('overlay-detail');
-  await loadProjects();
-  setRebuildStatus('dirty', 'Rebuild needed');
-  toast(`Deleted series '${slug}'`);
+  try {
+    await api('DELETE', `/projects/${slug}`);
+    closeSheet('overlay-detail');
+    await loadProjects();
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(`Deleted series '${slug}'`);
+  } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
 
 // ── Rebuild ───────────────────────────────────────────────────────
@@ -617,14 +631,14 @@ async function rebuild() {
   const icon = document.getElementById('rebuild-icon');
   icon.className = 'spin'; icon.textContent = '↻';
   document.getElementById('btn-rebuild').disabled = true;
-  setRebuildStatus('building', 'Building…');
+  setRebuildStatus('building', 'Triggering build…');
   try {
     await api('POST', '/rebuild');
-    setRebuildStatus('idle', 'Site rebuilt ✓');
-    toast('Site rebuilt successfully');
+    setRebuildStatus('idle', 'Build triggered ✓');
+    toast('Build triggered — check Cloudflare Pages for progress');
   } catch(e) {
-    setRebuildStatus('error', 'Build failed');
-    toast('Build failed: ' + e.message, true);
+    setRebuildStatus('error', 'Failed to trigger build');
+    toast('Failed to trigger build: ' + e.message, true);
   }
   icon.className = ''; icon.textContent = '↻';
   document.getElementById('btn-rebuild').disabled = false;

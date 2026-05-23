@@ -38,6 +38,49 @@ const json = (data, status = 200) =>
 
 const err = (msg, status = 400) => json({ error: msg }, status);
 
+// ─── Image dimensions (pure JS, no DOM — safe in Workers) ────────────────────
+
+function getImageDimensions(buffer) {
+  const u8 = new Uint8Array(buffer);
+  const dv = new DataView(buffer);
+
+  // JPEG
+  if (u8[0] === 0xFF && u8[1] === 0xD8) {
+    let i = 2;
+    while (i < dv.byteLength - 4) {
+      if (u8[i] !== 0xFF) break;
+      const marker = dv.getUint16(i); i += 2;
+      if (marker === 0xFFDA) break;
+      const segLen = dv.getUint16(i);
+      const isSOF = (marker >= 0xFFC0 && marker <= 0xFFCF)
+                 && marker !== 0xFFC4 && marker !== 0xFFCC;
+      if (isSOF) return { height: dv.getUint16(i + 3), width: dv.getUint16(i + 5) };
+      i += segLen;
+    }
+    return null;
+  }
+
+  // PNG
+  if (u8[0]===0x89 && u8[1]===0x50 && u8[2]===0x4E && u8[3]===0x47)
+    return { width: dv.getInt32(16), height: dv.getInt32(20) };
+
+  // WEBP
+  if (u8[0]===0x52 && u8[1]===0x49 && u8[2]===0x46 && u8[3]===0x46 &&
+      u8[8]===0x57 && u8[9]===0x45 && u8[10]===0x42 && u8[11]===0x50) {
+    const fourCC = String.fromCharCode(u8[12],u8[13],u8[14],u8[15]);
+    if (fourCC === 'VP8 ')
+      return { width: dv.getUint16(26,true)&0x3FFF, height: dv.getUint16(28,true)&0x3FFF };
+    if (fourCC === 'VP8L') {
+      const bits = dv.getUint32(21,true);
+      return { width:(bits&0x3FFF)+1, height:((bits>>14)&0x3FFF)+1 };
+    }
+    if (fourCC === 'VP8X')
+      return { width: (u8[24]|(u8[25]<<8)|(u8[26]<<16))+1,
+               height:(u8[27]|(u8[28]<<8)|(u8[29]<<16))+1 };
+  }
+  return null;
+}
+
 // ─── Image processing ────────────────────────────────────────────────────────
 
 const SIZES = [600, 1200, 2400];
@@ -238,6 +281,7 @@ export async function onRequest(ctx) {
 
       for (const file of files) {
         const originalBuffer = await file.arrayBuffer();
+        const dims = getImageDimensions(originalBuffer) ?? { width: 0, height: 0 };
         const id = nextPhotoId(photos);
         const key = `${slug}/${id}`;
         const originalKey = `${key}/original.jpg`;
@@ -267,7 +311,7 @@ export async function onRequest(ctx) {
         // Default is not downloadable — delete the temporarily-public original.
         await env.assetsBucket.delete(originalKey);
 
-        const photo = { id, key, width: 0, height: 0, caption: "", downloadable: false };
+        const photo = { id, key, width: dims.width, height: dims.height, caption: "", downloadable: false };
         photos.push(photo);
         addedPhotos.push(photo);
 
@@ -416,15 +460,18 @@ export async function onRequest(ctx) {
 
       const photos = manifest.data.photos ?? [];
 
-      // Delete all R2 objects for every photo (variants in ASSETS_BUCKET + originals in both).
-      for (const photo of photos) {
+      // Delete all R2 objects for every photo in parallel.
+      const allR2Deletes = photos.flatMap((photo) => {
         const variantKeys = SIZES.flatMap((s) =>
           FORMATS.map(({ ext }) => `${slug}/${photo.id}/${s}.${ext}`)
         );
         const origKey = `${slug}/${photo.id}/original.jpg`;
-        await env.assetsBucket.delete([...variantKeys, origKey]);
-        await env.originalsBucket.delete(origKey);
-      }
+        return [
+          env.assetsBucket.delete([...variantKeys, origKey]),
+          env.originalsBucket.delete(origKey),
+        ];
+      });
+      await Promise.all(allR2Deletes);
 
       // Build GitHub deletions: _index.md + all per-photo stubs.
       const deletions = [
