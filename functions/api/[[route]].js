@@ -512,6 +512,12 @@ export async function onRequest(ctx) {
         if (body[f] !== undefined) updatedData[f] = body[f];
       }
 
+      // Reorder photos by ID array
+      if (Array.isArray(body.photoOrder)) {
+        const photoMap = Object.fromEntries((manifest.data.photos ?? []).map(p => [p.id, p]));
+        updatedData.photos = body.photoOrder.map(id => photoMap[id]).filter(Boolean);
+      }
+
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
       await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
 

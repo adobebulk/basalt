@@ -41,7 +41,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 24px;
+      margin-bottom: 0;
     }
     .topbar-left { display: flex; align-items: center; gap: 16px; }
     .site-name { font-size: 12px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; }
@@ -58,6 +58,28 @@
     .topbar-nav button:hover { background: #f5f5f4; }
     .topbar-nav button:first-child { border-radius: 2px 0 0 2px; }
     .topbar-nav button:last-child  { border-radius: 0 2px 2px 0; }
+
+    /* ── Tab bar ─────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: .04em;
+      color: var(--muted);
+      border: none;
+      background: none;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      cursor: pointer;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--text); border-bottom-color: var(--text); }
 
     /* ── Green action button ─────────────────────────────────── */
     .btn-action {
@@ -105,6 +127,20 @@
       cursor: pointer;
     }
     .btn-danger:hover { background: var(--red-bg); }
+
+    /* Small icon button */
+    .btn-icon {
+      padding: 3px 7px;
+      font-size: 12px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      background: var(--bg);
+      color: var(--muted);
+      cursor: pointer;
+      line-height: 1;
+    }
+    .btn-icon:hover { background: #f5f5f4; color: var(--text); }
+    .btn-icon:disabled { opacity: .3; pointer-events: none; }
 
     /* ── Section heading ─────────────────────────────────────── */
     .section-head {
@@ -165,8 +201,9 @@
       letter-spacing: .04em;
       text-transform: uppercase;
     }
-    .badge-draft { border: 1px solid #c8a000; color: #7a5f00; background: var(--yellow-bg); }
-    .badge-live  { border: 1px solid #2a7a4f; color: var(--green); background: var(--green-bg); }
+    .badge-draft    { border: 1px solid #c8a000; color: #7a5f00; background: var(--yellow-bg); }
+    .badge-live     { border: 1px solid #2a7a4f; color: var(--green); background: var(--green-bg); }
+    .badge-featured { border: 1px solid #6060c8; color: #3030a0; background: #f0f0ff; }
 
     /* ── Divider ─────────────────────────────────────────────── */
     .divider { height: 1px; background: var(--border-light); margin: 28px 0; }
@@ -209,16 +246,20 @@
     /* ── Form ────────────────────────────────────────────────── */
     .field { display: flex; flex-direction: column; gap: 5px; }
     .field label { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
-    .field input, .field textarea {
+    .field .field-hint { font-size: 11px; color: var(--muted); }
+    .field input, .field textarea, .field select {
       font-family: var(--mono); font-size: 13px;
       padding: 8px 10px;
       border: 1px solid var(--border); border-radius: 2px;
       background: var(--bg); color: var(--text); width: 100%;
     }
-    .field input:focus, .field textarea:focus {
+    .field input:focus, .field textarea:focus, .field select:focus {
       outline: none; border-color: var(--green); box-shadow: 0 0 0 2px var(--green-bg);
     }
     .field textarea { min-height: 70px; resize: vertical; }
+    .field-check { display: flex; align-items: center; gap: 8px; }
+    .field-check input { width: auto; }
+    .field-check label { font-size: 12px; font-weight: normal; letter-spacing: 0; text-transform: none; color: var(--text); }
 
     /* ── Upload zone ─────────────────────────────────────────── */
     .upload-zone {
@@ -233,20 +274,116 @@
     .upload-zone p { font-size: 12px; color: var(--muted); margin-top: 5px; }
     .upload-zone strong { font-size: 13px; }
 
-    /* ── Photo grid in detail ────────────────────────────────── */
-    .photo-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
-    .photo-thumb { position: relative; aspect-ratio: 1; background: #f0f0ee; border: 1px solid var(--border-light); overflow: hidden; }
-    .photo-thumb img { width: 100%; height: 100%; object-fit: cover; }
-    .photo-thumb-del {
-      position: absolute; top: 3px; right: 3px;
-      background: rgba(0,0,0,.6); color: #fff; border: none;
-      width: 20px; height: 20px; border-radius: 2px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 11px; cursor: pointer;
-      opacity: 0; transition: opacity .15s;
+    /* ── Photo card list ─────────────────────────────────────── */
+    .photo-list { display: flex; flex-direction: column; gap: 6px; }
+    .photo-card {
+      border: 1px solid var(--border-light);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .photo-card-main {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px;
+    }
+    .photo-card-reorder {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      flex-shrink: 0;
+      padding-top: 2px;
+    }
+    .photo-card-thumb {
+      width: 64px;
+      height: 64px;
+      flex-shrink: 0;
+      background: #f0f0ee;
+      border: 1px solid var(--border-light);
+      overflow: hidden;
+      border-radius: 1px;
+    }
+    .photo-card-thumb img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-card-fields {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+    }
+    .photo-card-caption {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 5px 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 2px;
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .photo-card-caption:focus { outline: none; border-color: var(--green); }
+    .photo-card-id { font-size: 10px; color: var(--muted); }
+    .photo-card-del {
+      flex-shrink: 0;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 4px 6px;
+      border: 1px solid transparent;
+      border-radius: 2px;
+    }
+    .photo-card-del:hover { color: var(--red); background: var(--red-bg); border-color: #d8a0a0; }
+
+    /* Body section */
+    .photo-body-section {
+      border-top: 1px solid var(--border-light);
+      padding: 6px 8px;
+      background: #fafaf9;
+    }
+    .photo-body-toggle {
+      font-size: 11px;
+      color: var(--green);
+      cursor: pointer;
+      background: none;
+      border: none;
+      padding: 0;
       font-family: var(--mono);
     }
-    .photo-thumb:hover .photo-thumb-del { opacity: 1; }
+    .photo-body-toggle:hover { text-decoration: underline; }
+    .photo-body-editor { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+    .photo-body-editor textarea {
+      font-family: var(--mono);
+      font-size: 12px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 2px;
+      resize: vertical;
+      min-height: 80px;
+      max-height: 200px;
+      width: 100%;
+      background: var(--bg);
+    }
+    .photo-body-editor textarea:focus { outline: none; border-color: var(--green); }
+    .hidden { display: none !important; }
+
+    /* ── Featured items list (settings) ─────────────────────── */
+    .featured-list { display: flex; flex-direction: column; gap: 4px; }
+    .featured-item {
+      display: flex; align-items: center; gap: 6px;
+      padding: 5px 8px;
+      border: 1px solid var(--border-light);
+      border-radius: 2px;
+      background: #fafaf9;
+    }
+    .featured-item-label { flex: 1; font-size: 12px; }
+    .featured-add-row { display: flex; gap: 6px; margin-top: 6px; }
+    .featured-add-row select, .featured-add-row input {
+      font-family: var(--mono); font-size: 12px;
+      padding: 5px 8px;
+      border: 1px solid var(--border); border-radius: 2px;
+      background: var(--bg); color: var(--text);
+    }
+    .featured-add-row select { width: 90px; flex-shrink: 0; }
+    .featured-add-row input { flex: 1; }
 
     /* ── Rebuild bar ─────────────────────────────────────────── */
     .rebuild-bar {
@@ -259,6 +396,7 @@
     .rebuild-bar .status { flex: 1; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #c8a000; flex-shrink: 0; }
     .dot.idle { background: var(--green); }
+    .version-tag { font-size: 10px; opacity: .45; }
 
     /* ── Toast ───────────────────────────────────────────────── */
     #toast {
@@ -277,6 +415,18 @@
     /* ── Spinner ─────────────────────────────────────────────── */
     .spin { display: inline-block; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Posts list ──────────────────────────────────────────── */
+    .post-card {
+      border: 1px solid var(--border-light);
+      border-radius: 2px;
+      padding: 10px 12px;
+      display: flex; align-items: baseline; gap: 10px;
+    }
+    .post-card-info { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .post-card-title { font-size: 13px; font-weight: 600; }
+    .post-card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; }
+    .post-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
   </style>
 </head>
 <body>
@@ -288,33 +438,50 @@
       <span class="site-name">Photo Admin</span>
       <div class="topbar-nav">
         <button onclick="openSettings()">Settings</button>
-        <button onclick="openNewProject()">+ New Series</button>
+        <button id="btn-new" onclick="onNew()">+ New</button>
         <button id="btn-rebuild" onclick="rebuild()"><span id="rebuild-icon">↻</span> Rebuild</button>
-        <button id="btn-deploy" onclick="deploy()">Deploy →</button>
       </div>
     </div>
     <span style="font-size:11px;color:var(--muted)" id="rebuild-label">—</span>
   </div>
 
-  <!-- Series table -->
-  <div class="section-head">
-    <h2>Series</h2>
+  <!-- Tab bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-series" onclick="switchTab('series')">Series</button>
+    <button class="tab-btn" id="tab-btn-posts" onclick="switchTab('posts')">Posts</button>
   </div>
-  <div class="table-wrap">
-    <table>
-      <thead>
-        <tr>
-          <th style="width:130px">Slug</th>
-          <th>Title</th>
-          <th style="width:70px;text-align:right">Photos</th>
-          <th style="width:70px">Status</th>
-          <th style="width:90px"></th>
-        </tr>
-      </thead>
-      <tbody id="project-tbody">
-        <tr><td colspan="5"><div class="empty">Loading…</div></td></tr>
-      </tbody>
-    </table>
+
+  <!-- Series tab -->
+  <div id="tab-series">
+    <div class="section-head">
+      <h2>Series</h2>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:130px">Slug</th>
+            <th>Title</th>
+            <th style="width:70px;text-align:right">Photos</th>
+            <th style="width:70px">Status</th>
+            <th style="width:90px"></th>
+          </tr>
+        </thead>
+        <tbody id="project-tbody">
+          <tr><td colspan="5"><div class="empty">Loading…</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Posts tab -->
+  <div id="tab-posts" class="hidden">
+    <div class="section-head" style="margin-bottom:12px">
+      <h2>Posts</h2>
+    </div>
+    <div id="posts-list" style="display:flex;flex-direction:column;gap:6px">
+      <div class="empty" style="border:1px solid var(--border-light)">Loading…</div>
+    </div>
   </div>
 
 </div>
@@ -323,6 +490,7 @@
 <div class="rebuild-bar">
   <div class="dot idle" id="rebuild-dot"></div>
   <span class="status" id="rebuild-status">Site up to date</span>
+  <span class="version-tag" id="version-tag"></span>
 </div>
 
 <!-- ── New series sheet ──────────────────────────────────────── -->
@@ -348,6 +516,42 @@
   </div>
 </div>
 
+<!-- ── New / Edit post sheet ─────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-post" onclick="closeIfBackdrop(event,'overlay-post')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title" id="post-sheet-title">New Post</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-post')">close [esc]</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" id="post-title" placeholder="Post title" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Excerpt</label>
+        <textarea id="post-excerpt" rows="2" style="min-height:50px" placeholder="Short excerpt for cards — leave blank to skip"></textarea>
+      </div>
+      <div class="field">
+        <label>Body (markdown)</label>
+        <textarea id="post-body" rows="12" style="min-height:220px" placeholder="Write your post in markdown…"></textarea>
+      </div>
+      <div class="field-check">
+        <input type="checkbox" id="post-featured">
+        <label for="post-featured">Feature on homepage</label>
+      </div>
+      <div class="field-check">
+        <input type="checkbox" id="post-draft" checked>
+        <label for="post-draft">Draft — hide from public site</label>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn-action" onclick="savePost()">Save post →</button>
+        <button class="btn-outline" id="post-delete-btn" onclick="deletePost()" style="display:none">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Site Settings sheet ───────────────────────────────────── -->
 <div class="overlay hidden" id="overlay-settings" onclick="closeIfBackdrop(event,'overlay-settings')">
   <div class="sheet">
@@ -364,6 +568,34 @@
         <input type="text" id="set-photographer" placeholder="Your Name"></div>
       <div class="field"><label>Site description</label>
         <textarea id="set-description" placeholder="A photo gallery"></textarea></div>
+
+      <div style="height:1px;background:var(--border-light)"></div>
+
+      <div class="field">
+        <label>Hero photo key</label>
+        <input type="text" id="set-hero-key" placeholder="series-slug/001">
+        <span class="field-hint">R2 key prefix for the full-width homepage hero image. Leave blank for no hero.</span>
+      </div>
+      <div class="field">
+        <label>Hero link (optional)</label>
+        <input type="text" id="set-hero-link" placeholder="/projects/iceland-2025/">
+        <span class="field-hint">Where the hero image links to. Leave blank for no link.</span>
+      </div>
+
+      <div class="field">
+        <label>Featured items</label>
+        <div class="featured-list" id="featured-list"></div>
+        <div class="featured-add-row">
+          <select id="feat-type">
+            <option value="series">Series</option>
+            <option value="post">Post</option>
+          </select>
+          <input type="text" id="feat-slug" placeholder="slug">
+          <input type="text" id="feat-label" placeholder="label (optional)">
+          <button class="btn-outline" onclick="addFeaturedItem()">Add</button>
+        </div>
+      </div>
+
       <div><button class="btn-action" onclick="saveSettings()">Save settings →</button></div>
     </div>
   </div>
@@ -385,11 +617,40 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────
-let projects = [];
+let projects    = [];
+let posts       = [];
+let currentTab  = 'series';
+let editingPost = null;    // null = new, string = slug being edited
+let featuredItems = [];    // local state for settings panel
 
 // ── Init ─────────────────────────────────────────────────────────
 loadProjects();
 setRebuildStatus('idle', 'Site up to date');
+loadVersion();
+
+async function loadVersion() {
+  try {
+    const v = await api('GET', '/version');
+    const el = document.getElementById('version-tag');
+    if (el && v.version) el.textContent = 'v' + v.version;
+  } catch(_) {}
+}
+
+// ── Tab switching ─────────────────────────────────────────────────
+function switchTab(tab) {
+  currentTab = tab;
+  document.getElementById('tab-series').classList.toggle('hidden', tab !== 'series');
+  document.getElementById('tab-posts').classList.toggle('hidden', tab !== 'posts');
+  document.getElementById('tab-btn-series').classList.toggle('active', tab === 'series');
+  document.getElementById('tab-btn-posts').classList.toggle('active', tab === 'posts');
+  document.getElementById('btn-new').textContent = tab === 'series' ? '+ New Series' : '+ New Post';
+  if (tab === 'posts') loadPostsList();
+}
+
+function onNew() {
+  if (currentTab === 'series') openNewProject();
+  else openNewPost();
+}
 
 // ── API ──────────────────────────────────────────────────────────
 async function api(method, path, body, isForm) {
@@ -488,13 +749,8 @@ function renderDetail(p, photos) {
     ${photos.length ? `
       <div>
         <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:8px">Photos</div>
-        <div class="photo-grid" id="photo-grid-${p.slug}">
-          ${photos.map(f => `
-            <div class="photo-thumb" id="thumb-${p.slug}-${esc(f.id)}">
-              <img src="/assets/${esc(f.key)}/600.jpg" loading="lazy" onerror="this.style.display='none'">
-              <button class="photo-thumb-del" onclick="deletePhoto('${p.slug}','${esc(f.id)}',event)" title="Delete">✕</button>
-            </div>
-          `).join('')}
+        <div class="photo-list" id="photo-list-${p.slug}">
+          ${photos.map((f, i) => photoCardHTML(p.slug, f, i, photos.length)).join('')}
         </div>
       </div>
     ` : ''}
@@ -520,25 +776,157 @@ function renderDetail(p, photos) {
   `;
 }
 
-async function deletePhoto(slug, filename, e) {
-  e.stopPropagation();
-  if (!confirm(`Delete ${filename}?`)) return;
+function photoCardHTML(slug, f, idx, total) {
+  const hasBody = f.body && f.body.trim();
+  return `
+    <div class="photo-card" id="pcard-${slug}-${esc(f.id)}">
+      <div class="photo-card-main">
+        <div class="photo-card-reorder">
+          <button class="btn-icon" title="Move up" ${idx === 0 ? 'disabled' : ''}
+            onclick="movePhoto('${slug}','${esc(f.id)}',-1)">▲</button>
+          <button class="btn-icon" title="Move down" ${idx === total-1 ? 'disabled' : ''}
+            onclick="movePhoto('${slug}','${esc(f.id)}',1)">▼</button>
+        </div>
+        <div class="photo-card-thumb">
+          <img src="/assets/${esc(f.key)}/600.jpg" loading="lazy" onerror="this.style.display='none'">
+        </div>
+        <div class="photo-card-fields">
+          <div class="photo-card-id">${esc(f.id)}</div>
+          <input class="photo-card-caption" type="text"
+            placeholder="Caption…"
+            value="${esc(f.caption || '')}"
+            onblur="saveCaption('${slug}','${esc(f.id)}',this)">
+        </div>
+        <button class="photo-card-del" onclick="deletePhoto('${slug}','${esc(f.id)}',event)" title="Delete">✕</button>
+      </div>
+      <div class="photo-body-section">
+        <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
+          ${hasBody ? '▸ Edit note' : '▸ Add note'}
+        </button>
+        <div class="photo-body-editor hidden" id="body-editor-${slug}-${esc(f.id)}">
+          <textarea rows="4" placeholder="Markdown note shown on the photo permalink page…">${esc(hasBody ? f.body : '')}</textarea>
+          <div style="display:flex;gap:6px">
+            <button class="btn-outline" style="font-size:11px;padding:3px 10px"
+              onclick="saveBody('${slug}','${esc(f.id)}',this)">Save note</button>
+            ${hasBody ? `<button class="btn-outline" style="font-size:11px;padding:3px 10px;color:var(--muted)"
+              onclick="clearBody('${slug}','${esc(f.id)}',this)">Remove note</button>` : ''}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function toggleBodyEditor(btn, slug, id) {
+  const editor = document.getElementById(`body-editor-${slug}-${id}`);
+  const hidden = editor.classList.contains('hidden');
+  editor.classList.toggle('hidden', !hidden);
+  btn.textContent = hidden ? '▾ ' + (btn.textContent.includes('Add') ? 'Add note' : 'Edit note') : (btn.textContent.includes('Add') ? '▸ Add note' : '▸ Edit note');
+}
+
+// ── Photo reorder ─────────────────────────────────────────────────
+// currentPhotos is keyed by slug — we rebuild from the DOM card order
+function getPhotoOrderFromDOM(slug) {
+  const list = document.getElementById(`photo-list-${slug}`);
+  if (!list) return [];
+  return [...list.querySelectorAll('[data-photoid]')].map(el => el.dataset.photoid);
+}
+
+async function movePhoto(slug, id, direction) {
+  // Find photos list and current order from p.photos (live in DOM via data attrs)
+  const p = projects.find(x => x.slug === slug);
+  if (!p) return;
+
+  // Re-fetch current photos from API to get the latest order
+  let photos;
+  try { photos = await api('GET', `/projects/${slug}/photos`); }
+  catch(e) { toast('Failed to fetch photos: ' + e.message, true); return; }
+
+  const idx = photos.findIndex(f => f.id === id);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= photos.length) return;
+
+  // Swap
+  [photos[idx], photos[newIdx]] = [photos[newIdx], photos[idx]];
+  const photoOrder = photos.map(f => f.id);
+
   try {
-    await api('DELETE', `/projects/${slug}/photos/${filename}`);
-    document.getElementById(`thumb-${slug}-${filename}`)?.remove();
+    await api('PATCH', `/projects/${slug}`, { photoOrder });
     setRebuildStatus('dirty', 'Rebuild needed');
-    toast('Deleted ' + filename);
+    // Re-render the photo list in place
+    const list = document.getElementById(`photo-list-${slug}`);
+    if (list) {
+      list.innerHTML = photos.map((f, i) => photoCardHTML(slug, f, i, photos.length)).join('');
+    }
+  } catch(e) {
+    toast('Reorder failed: ' + e.message, true);
+  }
+}
+
+// ── Caption save ──────────────────────────────────────────────────
+async function saveCaption(slug, id, input) {
+  const caption = input.value.trim();
+  try {
+    await api('PATCH', `/projects/${slug}/photos/${id}`, { caption });
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Caption saved');
+  } catch(e) {
+    toast('Save failed: ' + e.message, true);
+  }
+}
+
+// ── Photo body save ───────────────────────────────────────────────
+async function saveBody(slug, id, btn) {
+  const editor = document.getElementById(`body-editor-${slug}-${id}`);
+  const body = editor.querySelector('textarea').value;
+  try {
+    await api('PATCH', `/projects/${slug}/photos/${id}`, { body });
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Note saved');
+    // Update toggle button text
+    const toggle = editor.closest('.photo-card').querySelector('.photo-body-toggle');
+    toggle.textContent = '▾ Edit note';
+  } catch(e) {
+    toast('Save failed: ' + e.message, true);
+  }
+}
+
+async function clearBody(slug, id, btn) {
+  const editor = document.getElementById(`body-editor-${slug}-${id}`);
+  if (!confirm('Remove this note?')) return;
+  try {
+    await api('PATCH', `/projects/${slug}/photos/${id}`, { body: '' });
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Note removed');
+    const toggle = editor.closest('.photo-card').querySelector('.photo-body-toggle');
+    toggle.textContent = '▸ Add note';
+    editor.querySelector('textarea').value = '';
+    editor.classList.add('hidden');
+    // Remove "Remove note" button
+    btn.remove();
+  } catch(e) {
+    toast('Remove failed: ' + e.message, true);
+  }
+}
+
+async function deletePhoto(slug, id, e) {
+  e.stopPropagation();
+  if (!confirm(`Delete photo ${id}?`)) return;
+  try {
+    await api('DELETE', `/projects/${slug}/photos/${id}`);
+    document.getElementById(`pcard-${slug}-${id}`)?.remove();
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Deleted ' + id);
   } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
 
-const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;   // 30 MB — above this, pre-compress
-const MAX_UPLOAD_PX    = 8000;                // max long edge in pixels
-const UPLOAD_QUALITY   = 0.92;               // JPEG quality for the re-compressed file
+const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MAX_UPLOAD_PX    = 8000;
+const UPLOAD_QUALITY   = 0.92;
 
 function resizeForUpload(file) {
-  // If small enough, use as-is (preserves original format/quality).
   if (file.size <= MAX_UPLOAD_BYTES) return Promise.resolve(file);
-
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -548,20 +936,15 @@ function resizeForUpload(file) {
       const scale = Math.min(1, MAX_UPLOAD_PX / Math.max(w, h));
       const cw = Math.round(w * scale);
       const ch = Math.round(h * scale);
-
       const canvas = document.createElement('canvas');
-      canvas.width  = cw;
-      canvas.height = ch;
+      canvas.width = cw; canvas.height = ch;
       canvas.getContext('2d').drawImage(img, 0, 0, cw, ch);
-
       canvas.toBlob(
         (blob) => {
           if (!blob) { reject(new Error('Canvas export failed')); return; }
-          const name = file.name.replace(/\.[^.]+$/, '') + '.jpg';
-          resolve(new File([blob], name, { type: 'image/jpeg' }));
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }));
         },
-        'image/jpeg',
-        UPLOAD_QUALITY
+        'image/jpeg', UPLOAD_QUALITY
       );
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read image')); };
@@ -573,45 +956,28 @@ async function uploadFiles(files, slug) {
   if (!files.length) return;
   const zone = document.getElementById(`drop-${slug}`);
   const total = files.length;
-  let succeeded = 0;
-  let failed = 0;
+  let succeeded = 0, failed = 0;
 
   for (let i = 0; i < total; i++) {
     const file = files[i];
-
     zone.innerHTML = `<strong><span class="spin">↻</span> Preparing photo ${i + 1} of ${total}…</strong>`;
-
     let processed;
-    try {
-      processed = await resizeForUpload(file);
-    } catch(e) {
-      failed++;
-      toast(`Skipped ${file.name}: ${e.message}`, true);
-      continue;
-    }
+    try { processed = await resizeForUpload(file); }
+    catch(e) { failed++; toast(`Skipped ${file.name}: ${e.message}`, true); continue; }
 
     zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${i + 1} of ${total}…</strong>`;
-
     const fd = new FormData();
     fd.append('photos', processed);
-
     try {
       await api('POST', `/projects/${slug}/photos`, fd, true);
       succeeded++;
-    } catch(e) {
-      failed++;
-      toast(`Failed ${file.name}: ${e.message}`, true);
-    }
+    } catch(e) { failed++; toast(`Failed ${file.name}: ${e.message}`, true); }
   }
 
-  if (failed === 0) {
-    toast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}`);
-  } else {
-    toast(`${succeeded} uploaded, ${failed} failed`, failed > 0);
-  }
+  if (failed === 0) toast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}`);
+  else toast(`${succeeded} uploaded, ${failed} failed`, failed > 0);
 
   setRebuildStatus('dirty', 'Rebuild needed');
-
   const p = projects.find(x => x.slug === slug);
   const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
   renderDetail(p, photos);
@@ -653,6 +1019,128 @@ async function deleteSeries(slug) {
   } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
 
+// ── Posts ─────────────────────────────────────────────────────────
+async function loadPostsList() {
+  const container = document.getElementById('posts-list');
+  container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Loading…</div>`;
+  try {
+    posts = await api('GET', '/posts');
+    renderPostsList();
+  } catch(e) {
+    container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Failed to load — ${esc(e.message)}</div>`;
+    toast('Failed to load posts: ' + e.message, true);
+  }
+}
+
+function renderPostsList() {
+  const container = document.getElementById('posts-list');
+  if (!posts.length) {
+    container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">No posts yet — click "+ New Post" to create one.</div>`;
+    return;
+  }
+  container.innerHTML = posts.map(p => `
+    <div class="post-card">
+      <div class="post-card-info">
+        <div class="post-card-title">${esc(p.title)}</div>
+        <div class="post-card-meta">
+          <span>${p.date || '—'}</span>
+          ${p.draft ? `<span class="badge badge-draft">Draft</span>` : `<span class="badge badge-live">Live</span>`}
+          ${p.featured ? `<span class="badge badge-featured">Featured</span>` : ''}
+        </div>
+      </div>
+      <div class="post-card-actions">
+        <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPost('${esc(p.slug)}')">Edit</button>
+        <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePostPublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePost('${esc(p.slug)}','${esc(p.title)}')">Del</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openNewPost() {
+  editingPost = null;
+  document.getElementById('post-sheet-title').textContent = 'New Post';
+  document.getElementById('post-title').value = '';
+  document.getElementById('post-excerpt').value = '';
+  document.getElementById('post-body').value = '';
+  document.getElementById('post-featured').checked = false;
+  document.getElementById('post-draft').checked = true;
+  document.getElementById('post-delete-btn').style.display = 'none';
+  openSheet('overlay-post');
+  setTimeout(() => document.getElementById('post-title').focus(), 150);
+}
+
+async function openEditPost(slug) {
+  editingPost = slug;
+  document.getElementById('post-sheet-title').textContent = 'Edit Post';
+  document.getElementById('post-delete-btn').style.display = '';
+  openSheet('overlay-post');
+  try {
+    const p = await api('GET', `/posts/${slug}`);
+    document.getElementById('post-title').value    = p.title    || '';
+    document.getElementById('post-excerpt').value  = p.excerpt  || '';
+    document.getElementById('post-body').value     = p.body     || '';
+    document.getElementById('post-featured').checked = !!p.featured;
+    document.getElementById('post-draft').checked    = !!p.draft;
+  } catch(e) { toast('Failed to load post: ' + e.message, true); }
+}
+
+async function savePost() {
+  const title    = document.getElementById('post-title').value.trim();
+  const excerpt  = document.getElementById('post-excerpt').value.trim();
+  const body     = document.getElementById('post-body').value;
+  const featured = document.getElementById('post-featured').checked;
+  const draft    = document.getElementById('post-draft').checked;
+
+  if (!title) { toast('Title is required', true); return; }
+
+  try {
+    if (!editingPost) {
+      await api('POST', '/posts', { title, excerpt, body, featured });
+      toast(`Post "${title}" created`);
+    } else {
+      await api('PATCH', `/posts/${editingPost}`, { title, excerpt, body, featured, draft });
+      toast('Post saved');
+    }
+    closeSheet('overlay-post');
+    setRebuildStatus('dirty', 'Rebuild needed');
+    await loadPostsList();
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
+async function togglePostPublish(slug, isDraft) {
+  try {
+    await api('POST', `/posts/${slug}/publish`, { draft: !isDraft });
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(isDraft ? 'Post published' : 'Post moved to draft');
+    await loadPostsList();
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function confirmDeletePost(slug, title) {
+  if (!confirm(`Delete post "${title}"? This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/posts/${slug}`);
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(`Deleted "${title}"`);
+    await loadPostsList();
+  } catch(e) { toast('Delete failed: ' + e.message, true); }
+}
+
+async function deletePost() {
+  if (!editingPost) return;
+  const titleEl = document.getElementById('post-title');
+  const title = titleEl.value || editingPost;
+  if (!confirm(`Delete post "${title}"? This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/posts/${editingPost}`);
+    closeSheet('overlay-post');
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast(`Deleted "${title}"`);
+    await loadPostsList();
+  } catch(e) { toast('Delete failed: ' + e.message, true); }
+}
+
 // ── Rebuild ───────────────────────────────────────────────────────
 function setRebuildStatus(state, msg) {
   document.getElementById('rebuild-dot').className = 'dot' + (state === 'idle' ? ' idle' : '');
@@ -677,23 +1165,6 @@ async function rebuild() {
   document.getElementById('btn-rebuild').disabled = false;
 }
 
-// ── Deploy ────────────────────────────────────────────────────────
-async function deploy() {
-  if (!confirm('Commit content changes and push to GitHub? Cloudflare Pages will build and deploy automatically.')) return;
-  const btn = document.getElementById('btn-deploy');
-  btn.disabled = true; btn.textContent = '↻ Deploying…';
-  setRebuildStatus('building', 'Pushing to GitHub…');
-  try {
-    const res = await api('POST', '/deploy');
-    setRebuildStatus('idle', 'Deployed ✓ — CF Pages is building');
-    toast(res.message || 'Deployed!');
-  } catch(e) {
-    setRebuildStatus('error', 'Deploy failed');
-    toast('Deploy failed: ' + e.message, true);
-  }
-  btn.disabled = false; btn.textContent = 'Deploy →';
-}
-
 // ── Settings ──────────────────────────────────────────────────────
 async function openSettings() {
   openSheet('overlay-settings');
@@ -703,7 +1174,51 @@ async function openSettings() {
     document.getElementById('set-nav').value          = s.navLabel     ?? '';
     document.getElementById('set-photographer').value = s.photographer ?? '';
     document.getElementById('set-description').value  = s.description  ?? '';
+    document.getElementById('set-hero-key').value     = s.heroPhotoKey ?? '';
+    document.getElementById('set-hero-link').value    = s.heroLink     ?? '';
+    featuredItems = Array.isArray(s.featured) ? s.featured.map(f => ({...f})) : [];
+    renderFeaturedList();
   } catch(e) { toast('Failed to load settings: ' + e.message, true); }
+}
+
+function renderFeaturedList() {
+  const list = document.getElementById('featured-list');
+  if (!featuredItems.length) {
+    list.innerHTML = `<div style="font-size:11px;color:var(--muted);padding:4px 0">No featured items</div>`;
+    return;
+  }
+  list.innerHTML = featuredItems.map((item, idx) => `
+    <div class="featured-item">
+      <span class="badge" style="font-size:10px;padding:1px 5px;border:1px solid var(--border)">${esc(item.type)}</span>
+      <span class="featured-item-label">${esc(item.slug)}${item.label ? ' — ' + esc(item.label) : ''}</span>
+      <button class="btn-icon" ${idx === 0 ? 'disabled' : ''} onclick="moveFeatured(${idx},-1)">▲</button>
+      <button class="btn-icon" ${idx === featuredItems.length-1 ? 'disabled' : ''} onclick="moveFeatured(${idx},1)">▼</button>
+      <button class="btn-icon" onclick="removeFeatured(${idx})" style="color:var(--red)">✕</button>
+    </div>
+  `).join('');
+}
+
+function addFeaturedItem() {
+  const type  = document.getElementById('feat-type').value;
+  const slug  = document.getElementById('feat-slug').value.trim();
+  const label = document.getElementById('feat-label').value.trim();
+  if (!slug) { toast('Slug is required', true); return; }
+  featuredItems.push({ type, slug, label });
+  document.getElementById('feat-slug').value = '';
+  document.getElementById('feat-label').value = '';
+  renderFeaturedList();
+}
+
+function removeFeatured(idx) {
+  featuredItems.splice(idx, 1);
+  renderFeaturedList();
+}
+
+function moveFeatured(idx, dir) {
+  const ni = idx + dir;
+  if (ni < 0 || ni >= featuredItems.length) return;
+  [featuredItems[idx], featuredItems[ni]] = [featuredItems[ni], featuredItems[idx]];
+  renderFeaturedList();
 }
 
 async function saveSettings() {
@@ -712,6 +1227,9 @@ async function saveSettings() {
     navLabel:     document.getElementById('set-nav').value.trim(),
     photographer: document.getElementById('set-photographer').value.trim(),
     description:  document.getElementById('set-description').value.trim(),
+    heroPhotoKey: document.getElementById('set-hero-key').value.trim(),
+    heroLink:     document.getElementById('set-hero-link').value.trim(),
+    featured:     featuredItems,
   };
   try {
     await api('PATCH', '/settings', body);
@@ -728,7 +1246,7 @@ function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) 
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  ['overlay-detail', 'overlay-new', 'overlay-settings'].forEach(id => {
+  ['overlay-detail','overlay-new','overlay-settings','overlay-post'].forEach(id => {
     if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
   });
 });
