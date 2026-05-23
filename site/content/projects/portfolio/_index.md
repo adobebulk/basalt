@@ -3,7 +3,13 @@ title: Portfolio
 description: ''
 date: '2026-05-23'
 draft: true
-cover: ''
+cover: '001'
 downloadsDefault: false
-photos: []
+photos:
+  - id: '001'
+    key: portfolio/001
+    width: 5369
+    height: 3579
+    caption: ''
+    downloadable: false
 ---
