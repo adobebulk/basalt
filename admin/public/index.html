@@ -668,11 +668,12 @@
 
 <script>
 // ── State ────────────────────────────────────────────────────────
-let projects    = [];
-let posts       = [];
-let currentTab  = 'series';
-let editingPost = null;
+let projects      = [];
+let posts         = [];
+let currentTab    = 'series';
+let editingPost   = null;
 let featuredItems = [];
+let panelSettings = {}; // cached per-panel settings (series detail)
 
 // ── Init ─────────────────────────────────────────────────────────
 loadProjects();
@@ -782,7 +783,8 @@ async function openDetail(slug) {
     api('GET', `/projects/${slug}/photos`),
     api('GET', '/settings').catch(() => ({})),
   ]);
-  renderDetail(p, photos, settings);
+  panelSettings = settings || {};
+  renderDetail(p, photos, panelSettings);
 }
 
 function renderDetail(p, photos, settings) {
@@ -854,6 +856,16 @@ function renderDetail(p, photos, settings) {
   `;
 }
 
+function featureBtnHTML(slug, id) {
+  const featured = Array.isArray(panelSettings.featured) ? panelSettings.featured : [];
+  const isFeatured = featured.some(f => f.type === 'photo' && f.slug === slug && f.photoId === id);
+  if (isFeatured) {
+    return `<span class="badge badge-featured" style="font-size:10px;padding:2px 6px">Featured ✓</span>
+            <button class="photo-feature-btn" style="color:var(--red);border-color:#d8a0a0" onclick="unfeaturePhoto('${slug}','${esc(id)}')">Remove</button>`;
+  }
+  return `<button class="photo-feature-btn" onclick="featurePhoto('${slug}','${esc(id)}')">✦ Feature</button>`;
+}
+
 function photoCardHTML(slug, f, idx, total) {
   const hasBody = f.body && f.body.trim();
   return `
@@ -874,6 +886,7 @@ function photoCardHTML(slug, f, idx, total) {
             placeholder="Caption…"
             value="${esc(f.caption || '')}"
             onblur="saveCaption('${slug}','${esc(f.id)}',this)">
+          <div style="font-size:10px;color:var(--muted);line-height:1.3">Used as the page title for the photo's post page. Add a caption to name this photo.</div>
         </div>
         <button class="photo-card-del" onclick="deletePhoto('${slug}','${esc(f.id)}',event)" title="Delete">✕</button>
       </div>
@@ -882,7 +895,7 @@ function photoCardHTML(slug, f, idx, total) {
           <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
             ${hasBody ? '▸ Edit note' : '▸ Add note'}
           </button>
-          ${hasBody ? `<button class="photo-feature-btn" onclick="featurePhoto('${slug}','${esc(f.id)}')">✦ Feature</button>` : ''}
+          <div id="feat-btn-${slug}-${esc(f.id)}">${featureBtnHTML(slug, f.id)}</div>
         </div>
         <div class="photo-body-editor hidden" id="body-editor-${slug}-${esc(f.id)}">
           <textarea rows="4" placeholder="Markdown note shown on the photo permalink page…">${esc(hasBody ? f.body : '')}</textarea>
@@ -931,13 +944,29 @@ async function clearHero() {
 // ── Feature a photo ───────────────────────────────────────────────
 async function featurePhoto(slug, id) {
   try {
-    const current = await api('GET', '/settings');
-    const featured = Array.isArray(current.featured) ? current.featured : [];
-    const already = featured.some(f => f.type === 'photo' && f.slug === slug && f.photoId === id);
-    if (already) { toast('Already in featured'); return; }
+    const featured = Array.isArray(panelSettings.featured) ? panelSettings.featured : [];
+    if (featured.some(f => f.type === 'photo' && f.slug === slug && f.photoId === id)) {
+      toast('Already in featured'); return;
+    }
     const updated = [{ type: 'photo', slug, photoId: id, label: '' }, ...featured];
     await api('PATCH', '/settings', { featured: updated });
-    toast('Photo added to featured — rebuild to publish');
+    panelSettings.featured = updated;
+    const el = document.getElementById(`feat-btn-${slug}-${id}`);
+    if (el) el.innerHTML = featureBtnHTML(slug, id);
+    toast('Added to featured — rebuild to publish');
+    setRebuildStatus('dirty', 'Rebuild needed');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function unfeaturePhoto(slug, id) {
+  try {
+    const featured = Array.isArray(panelSettings.featured) ? panelSettings.featured : [];
+    const updated = featured.filter(f => !(f.type === 'photo' && f.slug === slug && f.photoId === id));
+    await api('PATCH', '/settings', { featured: updated });
+    panelSettings.featured = updated;
+    const el = document.getElementById(`feat-btn-${slug}-${id}`);
+    if (el) el.innerHTML = featureBtnHTML(slug, id);
+    toast('Removed from featured — rebuild to publish');
     setRebuildStatus('dirty', 'Rebuild needed');
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
@@ -961,6 +990,7 @@ async function movePhoto(slug, id, direction) {
     setRebuildStatus('dirty', 'Rebuild needed');
     const list = document.getElementById(`photo-list-${slug}`);
     if (list) list.innerHTML = photos.map((f, i) => photoCardHTML(slug, f, i, photos.length)).join('');
+    toast('Order saved');
   } catch(e) { toast('Reorder failed: ' + e.message, true); }
 }
 
@@ -1074,7 +1104,8 @@ async function uploadFiles(files, slug) {
     api('GET', `/projects/${slug}/photos`).catch(() => []),
     api('GET', '/settings').catch(() => ({})),
   ]);
-  renderDetail(p, photos, settings);
+  panelSettings = settings || {};
+  renderDetail(p, photos, panelSettings);
 }
 
 function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
