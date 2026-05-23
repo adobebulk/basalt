@@ -509,7 +509,7 @@ async function uploadFiles(files, slug) {
   for (const f of files) fd.append('photos', f);
   try {
     const res = await api('POST', `/projects/${slug}/photos`, fd, true);
-    toast(`Uploaded ${res.added.length} photo${res.added.length > 1 ? 's' : ''}`);
+    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
     setRebuildStatus('dirty', 'Rebuild needed');
     const p = projects.find(x => x.slug === slug);
     const photos = await api('GET', `/projects/${slug}/photos`);
