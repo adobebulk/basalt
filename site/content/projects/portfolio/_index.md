@@ -120,4 +120,10 @@ photos:
     height: 3109
     caption: ''
     downloadable: false
+  - id: '020'
+    key: portfolio/020
+    width: 4082
+    height: 2357
+    caption: ''
+    downloadable: false
 ---
