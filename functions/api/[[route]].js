@@ -56,10 +56,13 @@ const BASE_URL = "https://photos.ctsmith.org";
  */
 async function generateVariants(slug, id) {
   const originalUrl = `${BASE_URL}/assets/${slug}/${id}/original.jpg`;
-  const variants = [];
 
-  for (const size of SIZES) {
-    for (const { format, ext, contentType } of FORMATS) {
+  const jobs = SIZES.flatMap((size) =>
+    FORMATS.map(({ format, ext, contentType }) => ({ size, format, ext, contentType }))
+  );
+
+  const variants = await Promise.all(
+    jobs.map(async ({ size, format, ext, contentType }) => {
       const res = await fetch(originalUrl, {
         cf: {
           image: {
@@ -75,13 +78,13 @@ async function generateVariants(slug, id) {
         throw new Error(`Image transform failed for ${size}.${ext}: ${res.status}`);
       }
 
-      variants.push({
+      return {
         key: `${slug}/${id}/${size}.${ext}`,
         buffer: await res.arrayBuffer(),
         contentType,
-      });
-    }
-  }
+      };
+    })
+  );
 
   return variants;
 }
