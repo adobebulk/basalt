@@ -89,19 +89,21 @@ const FORMATS = [
   { format: "jpeg", ext: "jpg",  contentType: "image/jpeg" },
 ];
 
-const BASE_URL = "https://photos.ctsmith.org";
-
 /**
  * Generate all 6 variants for one photo via "Transform via Workers".
  * The original must already be in ASSETS_BUCKET before calling this.
  * Strips all metadata (metadata: "none") — no GPS or EXIF in published files.
  * Returns array of { key, buffer, contentType } ready to PUT to R2.
  *
- * Same-zone subrequests with cf.image can silently hang, so each fetch is
- * wrapped with a 25-second AbortController timeout.
+ * Uses the R2 custom domain (env.assetsR2Url) as the transform source — NOT the
+ * /assets/* Pages Function URL. cf.image is not applied when the source is
+ * another Worker in the same zone; a direct R2 domain bypasses that restriction.
+ *
+ * Each fetch is wrapped with a 25-second AbortController timeout so a stalled
+ * transform throws a clear error instead of hanging indefinitely.
  */
-async function generateVariants(slug, id) {
-  const originalUrl = `${BASE_URL}/assets/${slug}/${id}/original.jpg`;
+async function generateVariants(slug, id, env) {
+  const originalUrl = `${env.assetsR2Url}/${slug}/${id}/original.jpg`;
   console.log(`[generateVariants] starting transforms for ${slug}/${id} from ${originalUrl}`);
 
   const jobs = SIZES.flatMap((size) =>
@@ -294,7 +296,7 @@ export async function onRequest(ctx) {
 
         // 2. Generate 6 variants via Transform via Workers (fetch with cf.image).
         //    width/height default to 0 — templates degrade gracefully without them.
-        const variants = await generateVariants(slug, id);
+        const variants = await generateVariants(slug, id, env);
 
         // 3. PUT variants to ASSETS_BUCKET.
         for (const v of variants) {
@@ -540,11 +542,6 @@ export async function onRequest(ctx) {
         message: `content: ${draft ? "unpublish" : "publish"} series ${slug}`,
         files: [{ path: indexPath(slug), content: updatedManifest }],
       });
-
-      // Ping the deploy hook to trigger a Pages rebuild
-      if (env.deployHookUrl) {
-        await fetch(env.deployHookUrl, { method: "POST" });
-      }
 
       return json({ slug, draft: Boolean(draft) });
     }
