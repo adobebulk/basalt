@@ -7,6 +7,10 @@
 
 name = "static-photos"
 compatibility_date = "2025-01-01"
+pages_build_output_dir = "site/public"
+
+[vars]
+HUGO_VERSION = "0.161.1"
 
 [images]
 binding = "IMAGES"
