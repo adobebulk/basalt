@@ -42,4 +42,10 @@ photos:
     height: 4000
     caption: ''
     downloadable: false
+  - id: '007'
+    key: portfolio/007
+    width: 5062
+    height: 2847
+    caption: ''
+    downloadable: false
 ---
