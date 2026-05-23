@@ -4,8 +4,4 @@ photographer: C.T.Smith
 description: CT Smith Photos
 heroPhotoKey: ''
 heroLink: ''
-featured:
-  - type: photo
-    slug: instagram
-    photoId: '003'
-    label: ''
+featured: []
