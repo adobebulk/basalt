@@ -1,3 +1,4 @@
+{{- $s := .Site.Data.settings -}}
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 {{- if .Params.photoid -}}
@@ -7,7 +8,7 @@
 {{- else -}}
 <title>{{ if .IsHome }}{{ .Site.Title }}{{ else }}{{ .Title }} — {{ .Site.Title }}{{ end }}</title>
 {{- end }}
-<meta name="description" content="{{ with .Params.description }}{{ . }}{{ else }}{{ .Site.Params.description }}{{ end }}">
+<meta name="description" content="{{ with .Params.description }}{{ . }}{{ else }}{{ $s.description | default .Site.Params.description }}{{ end }}">
 {{ partial "og.html" . }}
 <link rel="stylesheet" href="{{ "css/style.css" | relURL }}">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe.css">

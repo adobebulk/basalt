@@ -287,6 +287,7 @@
     <div class="topbar-left">
       <span class="site-name">Photo Admin</span>
       <div class="topbar-nav">
+        <button onclick="openSettings()">Settings</button>
         <button onclick="openNewProject()">+ New Series</button>
         <button id="btn-rebuild" onclick="rebuild()"><span id="rebuild-icon">↻</span> Rebuild</button>
         <button id="btn-deploy" onclick="deploy()">Deploy →</button>
@@ -343,6 +344,27 @@
       <div>
         <button class="btn-action" onclick="createProject()">Create series →</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Site Settings sheet ───────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-settings" onclick="closeIfBackdrop(event,'overlay-settings')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title">Site Settings</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-settings')">close [esc]</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field"><label>Site title</label>
+        <input type="text" id="set-title" placeholder="Photos"></div>
+      <div class="field"><label>Nav label</label>
+        <input type="text" id="set-nav" placeholder="Work"></div>
+      <div class="field"><label>Photographer name (footer)</label>
+        <input type="text" id="set-photographer" placeholder="Your Name"></div>
+      <div class="field"><label>Site description</label>
+        <textarea id="set-description" placeholder="A photo gallery"></textarea></div>
+      <div><button class="btn-action" onclick="saveSettings()">Save settings →</button></div>
     </div>
   </div>
 </div>
@@ -550,38 +572,49 @@ function resizeForUpload(file) {
 async function uploadFiles(files, slug) {
   if (!files.length) return;
   const zone = document.getElementById(`drop-${slug}`);
+  const total = files.length;
+  let succeeded = 0;
+  let failed = 0;
 
-  zone.innerHTML = `<strong>Preparing ${files.length} file${files.length > 1 ? 's' : ''}…</strong>`;
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
 
-  let processedFiles;
-  try {
-    processedFiles = await Promise.all(Array.from(files).map(resizeForUpload));
-  } catch (e) {
-    toast(e.message || 'Failed to prepare image', true);
-    const p = projects.find(x => x.slug === slug);
-    const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
-    renderDetail(p, photos);
-    return;
+    zone.innerHTML = `<strong><span class="spin">↻</span> Preparing photo ${i + 1} of ${total}…</strong>`;
+
+    let processed;
+    try {
+      processed = await resizeForUpload(file);
+    } catch(e) {
+      failed++;
+      toast(`Skipped ${file.name}: ${e.message}`, true);
+      continue;
+    }
+
+    zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${i + 1} of ${total}…</strong>`;
+
+    const fd = new FormData();
+    fd.append('photos', processed);
+
+    try {
+      await api('POST', `/projects/${slug}/photos`, fd, true);
+      succeeded++;
+    } catch(e) {
+      failed++;
+      toast(`Failed ${file.name}: ${e.message}`, true);
+    }
   }
 
-  zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${processedFiles.length} file${processedFiles.length > 1 ? 's' : ''}…</strong>`;
-
-  const fd = new FormData();
-  for (const f of processedFiles) fd.append('photos', f);
-
-  try {
-    const res = await api('POST', `/projects/${slug}/photos`, fd, true);
-    toast(`Uploaded ${res.uploaded.length} photo${res.uploaded.length > 1 ? 's' : ''}`);
-    setRebuildStatus('dirty', 'Rebuild needed');
-    const p = projects.find(x => x.slug === slug);
-    const photos = await api('GET', `/projects/${slug}/photos`);
-    renderDetail(p, photos);
-  } catch (e) {
-    toast(e.message || 'Upload failed', true);
-    const p = projects.find(x => x.slug === slug);
-    const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
-    renderDetail(p, photos);
+  if (failed === 0) {
+    toast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}`);
+  } else {
+    toast(`${succeeded} uploaded, ${failed} failed`, failed > 0);
   }
+
+  setRebuildStatus('dirty', 'Rebuild needed');
+
+  const p = projects.find(x => x.slug === slug);
+  const photos = await api('GET', `/projects/${slug}/photos`).catch(() => []);
+  renderDetail(p, photos);
 }
 
 function dragOver(e, el) { e.preventDefault(); el.classList.add('drag'); }
@@ -661,6 +694,33 @@ async function deploy() {
   btn.disabled = false; btn.textContent = 'Deploy →';
 }
 
+// ── Settings ──────────────────────────────────────────────────────
+async function openSettings() {
+  openSheet('overlay-settings');
+  try {
+    const s = await api('GET', '/settings');
+    document.getElementById('set-title').value        = s.title        ?? '';
+    document.getElementById('set-nav').value          = s.navLabel     ?? '';
+    document.getElementById('set-photographer').value = s.photographer ?? '';
+    document.getElementById('set-description').value  = s.description  ?? '';
+  } catch(e) { toast('Failed to load settings: ' + e.message, true); }
+}
+
+async function saveSettings() {
+  const body = {
+    title:        document.getElementById('set-title').value.trim(),
+    navLabel:     document.getElementById('set-nav').value.trim(),
+    photographer: document.getElementById('set-photographer').value.trim(),
+    description:  document.getElementById('set-description').value.trim(),
+  };
+  try {
+    await api('PATCH', '/settings', body);
+    closeSheet('overlay-settings');
+    setRebuildStatus('dirty', 'Rebuild needed');
+    toast('Settings saved — rebuild to publish');
+  } catch(e) { toast('Save failed: ' + e.message, true); }
+}
+
 // ── Sheet helpers ─────────────────────────────────────────────────
 function openSheet(id) { document.getElementById(id).classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
 function closeSheet(id) { document.getElementById(id).classList.add('hidden'); document.body.style.overflow = ''; }
@@ -668,7 +728,7 @@ function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) 
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  ['overlay-detail', 'overlay-new'].forEach(id => {
+  ['overlay-detail', 'overlay-new', 'overlay-settings'].forEach(id => {
     if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
   });
 });

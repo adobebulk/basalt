@@ -17,6 +17,7 @@
  * Docs: https://developers.cloudflare.com/images/transform-images/transform-via-workers/
  */
 
+import yaml from "js-yaml";
 import { getEnv } from "../_lib/env.js";
 import { getFile, listDir, commitFiles } from "../_lib/github.js";
 import {
@@ -179,6 +180,14 @@ async function purgeCache(env, url) {
 
 const indexPath = (slug) => `site/content/projects/${slug}/_index.md`;
 const stubPath = (slug, id) => `site/content/projects/${slug}/${id}.md`;
+const settingsPath = "site/data/settings.yaml";
+
+const DEFAULT_SETTINGS = {
+  title: "Photos",
+  navLabel: "Work",
+  photographer: "Your Name",
+  description: "A photo gallery",
+};
 
 async function readManifest(token, repo, slug) {
   const file = await getFile(token, repo, indexPath(slug));
@@ -570,6 +579,33 @@ export async function onRequest(ctx) {
       }
 
       return json({ ok: true, message: "Cloudflare Pages build triggered." });
+    }
+
+    // ── GET /api/settings ────────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "settings") {
+      const file = await getFile(env.githubToken, env.githubRepo, settingsPath);
+      if (!file) return json(DEFAULT_SETTINGS);
+      const loaded = yaml.load(file.content) ?? {};
+      return json({ ...DEFAULT_SETTINGS, ...loaded });
+    }
+
+    // ── PATCH /api/settings ──────────────────────────────────────────────────
+    if (method === "PATCH" && segments.length === 1 && segments[0] === "settings") {
+      const body = await request.json();
+      const file = await getFile(env.githubToken, env.githubRepo, settingsPath);
+      const current = file ? (yaml.load(file.content) ?? {}) : {};
+      const allowedKeys = ["title", "navLabel", "photographer", "description"];
+      const updated = { ...DEFAULT_SETTINGS, ...current };
+      for (const k of allowedKeys) {
+        if (body[k] !== undefined) updated[k] = body[k];
+      }
+      await commitFiles({
+        token: env.githubToken,
+        repo: env.githubRepo,
+        message: "config: update site settings",
+        files: [{ path: settingsPath, content: yaml.dump(updated) }],
+      });
+      return json(updated);
     }
 
     // ── 404 ──────────────────────────────────────────────────────────────────
