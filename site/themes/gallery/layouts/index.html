@@ -11,17 +11,31 @@
 
     {{/* ── Section 1: Hero ── */}}
     {{- with $s.heroPhotoKey -}}
+    {{- $heroKey := . -}}
+    {{- $heroParts := split $heroKey "/" -}}
+    {{- $heroSeriesSlug := index $heroParts 0 -}}
+    {{- $heroPhotoId := index $heroParts 1 -}}
+    {{- $heroSeries := site.GetPage (printf "/projects/%s" $heroSeriesSlug) -}}
+    {{- $heroPhoto := dict -}}
+    {{- with $heroSeries -}}
+      {{- range .Params.photos -}}
+        {{- if eq .id $heroPhotoId -}}{{- $heroPhoto = . -}}{{- end -}}
+      {{- end -}}
+    {{- end -}}
+    {{- $heroPermalink := printf "/projects/%s/%s/" $heroSeriesSlug $heroPhotoId -}}
     <section class="relative overflow-hidden" style="aspect-ratio:16/9;max-height:80vh;">
+      <a href="{{ $heroPermalink }}" style="position:absolute;inset:0;z-index:1;" aria-label="View photo"></a>
       <img
-        src="{{ $base }}/{{ . }}/1200.jpg"
-        srcset="{{ $base }}/{{ . }}/600.jpg 600w, {{ $base }}/{{ . }}/1200.jpg 1200w, {{ $base }}/{{ . }}/2400.jpg 2400w"
+        src="{{ $base }}/{{ $heroKey }}/1200.jpg"
+        srcset="{{ $base }}/{{ $heroKey }}/600.jpg 600w, {{ $base }}/{{ $heroKey }}/1200.jpg 1200w, {{ $base }}/{{ $heroKey }}/2400.jpg 2400w"
         sizes="100vw"
         class="w-full h-full object-cover"
-        alt=""
+        alt="{{ with $heroPhoto.caption }}{{ . }}{{ end }}"
         loading="eager"
       >
-      {{- with $s.heroLink -}}
-      <a href="{{ . }}" style="position:absolute;inset:0;" aria-label="Hero link"></a>
+      {{- with $heroPhoto.caption -}}
+      <div style="position:absolute;inset:0;background:linear-gradient(to top,rgba(0,0,0,.6) 0%,transparent 50%);pointer-events:none;z-index:2;"></div>
+      <p style="position:absolute;bottom:0;left:0;right:0;padding:1.25rem 1.5rem;color:rgba(255,255,255,.9);font-size:.875rem;line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;pointer-events:none;z-index:3;">{{ . }}</p>
       {{- end -}}
     </section>
     {{- end -}}

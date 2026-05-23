@@ -14,18 +14,29 @@
   <main class="flex-1 flex flex-col items-center">
   {{- with $photo -}}
     <div class="w-full max-w-5xl px-3 py-6">
-      <img
-        class="w-full h-auto rounded-sm bg-stone-200"
-        src="{{ $base }}/{{ .key }}/1200.jpg"
-        srcset="{{ $base }}/{{ .key }}/1200.avif 1200w, {{ $base }}/{{ .key }}/2400.avif 2400w"
-        sizes="(min-width:1024px) 1024px, 100vw"
-        width="{{ .width }}" height="{{ .height }}"
-        alt="{{ with .caption }}{{ . }}{{ else }}{{ $series.Title }}{{ end }}"
+
+      <a href="{{ $series.RelPermalink }}" class="inline-block mb-4 text-sm text-stone-500 hover:text-stone-900 transition-colors">← {{ $series.Title }}</a>
+
+      <a
+        href="{{ $base }}/{{ .key }}/2400.jpg"
+        data-pswp-src="{{ $base }}/{{ .key }}/2400.jpg"
+        {{ if gt .width 0 }}data-pswp-width="{{ .width }}" data-pswp-height="{{ .height }}"{{ end }}
+        id="permalink-photo"
+        class="block cursor-zoom-in"
       >
+        <img
+          class="w-full h-auto rounded-sm bg-stone-200"
+          src="{{ $base }}/{{ .key }}/1200.jpg"
+          srcset="{{ $base }}/{{ .key }}/1200.avif 1200w, {{ $base }}/{{ .key }}/2400.avif 2400w"
+          sizes="(min-width:1024px) 1024px, 100vw"
+          width="{{ .width }}" height="{{ .height }}"
+          alt="{{ with .caption }}{{ . }}{{ else }}{{ $series.Title }}{{ end }}"
+        >
+      </a>
+
       <div class="flex items-baseline justify-between gap-4 mt-3">
         <div>
           {{- with .caption }}<p class="text-sm text-stone-700">{{ . }}</p>{{- end -}}
-          <a href="{{ $series.RelPermalink }}" class="text-xs text-stone-400 hover:text-stone-900 transition-colors">{{ $series.Title }}</a>
         </div>
         {{- $dl := $series.Params.downloadsDefault -}}
         {{- if isset . "downloadable" }}{{ $dl = .downloadable }}{{ end -}}
@@ -55,5 +66,53 @@
   </main>
 
   {{ partial "footer.html" . }}
+
+  {{- with $photo -}}
+  <script type="module">
+    import PhotoSwipeLightbox from 'https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe-lightbox.esm.js';
+    const lightbox = new PhotoSwipeLightbox({
+      gallery: '#permalink-photo',
+      children: 'a#permalink-photo',
+      pswpModule: () => import('https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe.esm.js'),
+      bgOpacity: 0.96,
+      showHideAnimationType: 'fade',
+    });
+
+    lightbox.addFilter('itemData', (itemData) => {
+      const el = itemData.element;
+      if (el) {
+        itemData.src = el.dataset.pswpSrc;
+        if (el.dataset.pswpWidth)  itemData.width  = parseInt(el.dataset.pswpWidth, 10);
+        if (el.dataset.pswpHeight) itemData.height = parseInt(el.dataset.pswpHeight, 10);
+      }
+      return itemData;
+    });
+
+    lightbox.on('contentLoad', (e) => {
+      const { content } = e;
+      if (content.data.width && content.data.height) return;
+      e.preventDefault();
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = content.data.src;
+      img.onload = () => {
+        content.data.width  = img.naturalWidth;
+        content.data.height = img.naturalHeight;
+        content.element = img;
+        content.instance.invalidateCurrItems();
+        content.instance.updateSize(true);
+      };
+      img.onerror = () => {
+        content.data.width  = window.innerWidth;
+        content.data.height = window.innerWidth;
+        content.element = img;
+        content.instance.invalidateCurrItems();
+        content.instance.updateSize(true);
+      };
+    });
+
+    lightbox.init();
+  </script>
+  {{- end -}}
 </body>
 </html>
