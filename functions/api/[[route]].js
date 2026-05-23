@@ -271,7 +271,7 @@ export async function onRequest(ctx) {
         files: gitFiles,
       });
 
-      return json({ added: addedPhotos }, 201);
+      return json({ uploaded: addedPhotos }, 201);
     }
 
     // ── PATCH /api/projects/:slug/photos/:id ─────────────────────────────────
@@ -442,6 +442,19 @@ export async function onRequest(ctx) {
       }
 
       return json({ slug, draft: Boolean(draft) });
+    }
+
+    // ── POST /api/rebuild ────────────────────────────────────────────────────
+    if (method === "POST" && segments.length === 1 && segments[0] === "rebuild") {
+      if (!env.deployHookUrl) return err("DEPLOY_HOOK_URL not configured", 503);
+
+      const res = await fetch(env.deployHookUrl, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.text();
+        return err(`Deploy hook returned ${res.status}: ${body}`, 502);
+      }
+
+      return json({ ok: true, message: "Cloudflare Pages build triggered." });
     }
 
     // ── POST /api/deploy ─────────────────────────────────────────────────────
