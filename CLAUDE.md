@@ -2,7 +2,7 @@
 
 Context file for both Cowork and Claude Code. Keep this up to date as the project evolves.
 
-> **Architecture redesigned 2026-05-21, single-host decision 2026-05-22.** The project moved from a Mac-Mini-as-hub model to a **decoupled (Jamstack) architecture**: build the site from code, store the heavy assets in object storage, run the admin as serverless code. Everything is served from **one hostname** (`photos.ctsmith.org`) via a single Cloudflare Pages project. The full migration plan, rationale, and open decisions live in **`DEPLOYMENT-PLAN.md`** — read that first. This file is the working summary.
+> **Architecture redesigned 2026-05-21, single-host decision 2026-05-22.** The project moved from a Mac-Mini-as-hub model to a **decoupled (Jamstack) architecture**: build the site from code, store the heavy assets in object storage, run the admin as serverless code. Everything is served from **one hostname** (`photos.ctsmith.org`) via a single Cloudflare Pages project. Migration is complete — this file is the authoritative working summary.
 
 ---
 
@@ -46,7 +46,19 @@ RAW originals → personal backup drive (never enter this pipeline)
 
 Cloudflare Access is configured to gate `/admin*` and `/api*`; gallery pages and `/assets/*` are public.
 
-The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflared`, launchd, and the `sauron` server account are all retired. The design stays portable: see "Future option — self-host" in `DEPLOYMENT-PLAN.md` §6a.
+The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflared`, launchd, and the `sauron` server account are all retired.
+
+---
+
+## Documentation hygiene
+
+After any significant change — new feature, new API endpoint, architectural decision, major bugfix, or retired component — update the following before committing:
+
+1. **README.md** if the change affects setup, running, or understanding the project
+2. **CLAUDE.md** if the change affects architecture, data models, API shape, or the Cowork/Claude Code workflow split
+3. **Delete any files that are no longer in use**
+
+This applies to both Cowork sessions (which update docs and prompt Claude Code to clean up) and Claude Code sessions (which should include doc/cleanup steps in the same commit as the feature work).
 
 ---
 
@@ -60,7 +72,7 @@ The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflar
 | Hosting | Cloudflare Pages | Builds Hugo on push + on deploy-hook. Free tier. |
 | Asset serving | Pages Function `/assets/*` | Streams from R2; edge-cached immutably. |
 | Asset storage | Cloudflare R2 | Two buckets: `ASSETS_BUCKET` (public variants + public originals) + `ORIGINALS_BUCKET` (all originals, private). No egress fees. |
-| Image processing | Cloudflare image-transform binding (`IMAGES`) | Pre-bakes 600/1200/2400px AVIF + JPEG; strips all metadata. |
+| Image processing | Cloudflare Transform via Workers | `fetch(url, { cf: { image: {...} } })` — 600/1200/2400px AVIF + JPEG; strips all metadata. Source URL must use R2 custom domain (`r2.photos.ctsmith.org`) — cf.image is not applied on same-zone Worker→Worker subrequests. |
 | Admin backend | Pages Functions (`/api/*`) | Serverless. Existing monospace admin UI kept; backend rewritten to talk to R2 + GitHub. |
 | Admin UI | Static HTML at `/admin` | `site/static/admin/index.html` — served by Pages, gated by Access. |
 | Auth | Cloudflare Access | Gates `/admin*` and `/api*` on `photos.ctsmith.org`. |
@@ -73,25 +85,32 @@ The Mac Mini is **out of the serving/admin path entirely** — Caddy, `cloudflar
 ```
 static-photos/
 ├── CLAUDE.md                   ← you are here (working summary)
-├── DEPLOYMENT-PLAN.md          ← full migration plan + rationale + open decisions
+├── RUNBOOK.md                  ← Cloudflare/GitHub account setup guide
+├── README.md                   ← orientation for developers
 ├── .dev.vars.example           ← copy to .dev.vars for local wrangler dev
 ├── package.json                ← root: Tailwind + dev scripts
 ├── tailwind.config.js          ← scans site/themes/gallery/layouts/**
-├── wrangler.toml               ← Pages project config + R2 bindings (Phase 0)
+├── wrangler.toml               ← Pages project config + R2 bindings
 ├── functions/                  ← Cloudflare Pages Functions
-│   ├── _lib/env.js             ← central binding/var registry (getEnv helper)
+│   ├── _lib/
+│   │   ├── env.js              ← central binding/var registry (getEnv helper)
+│   │   ├── github.js           ← GitHub Trees API — atomic multi-file commits
+│   │   ├── manifest.js         ← front-matter parse/serialize, slugify, ID helpers
+│   │   └── staging.js          ← _pending/ staging layer
 │   ├── assets/[[path]].js      ← R2 stream handler (edge-cached)
-│   └── api/[[route]].js        ← admin API router (stubbed → Phase 2)
+│   └── api/[[route]].js        ← admin API router
 ├── admin/
-│   ├── server.js               ← OLD Express server (reference only; being replaced)
 │   └── public/
-│       └── index.html          ← admin UI source (monospace catalog aesthetic — KEEP)
+│       └── index.html          ← admin UI source (keep in sync with site/static/admin/)
+├── scripts/
+│   └── rebuild.sh              ← local Hugo preview shortcut
 └── site/                       ← Hugo site root (run hugo --source site)
     ├── hugo.toml               ← assetsBaseURL = "/assets"; baseURL = production domain
+    ├── data/settings.yaml      ← site title, navLabel, photographer, description
     ├── assets/css/input.css
     ├── static/
     │   ├── css/style.css
-    │   └── admin/index.html    ← admin UI served at /admin (copied from admin/public/)
+    │   └── admin/index.html    ← admin UI served at /admin (keep in sync with admin/public/)
     ├── content/projects/
     │   ├── _index.md
     │   └── <series-slug>/      ← branch bundle
@@ -105,8 +124,6 @@ static-photos/
         │   └── single.html     ← per-photo permalink + OG tags
         └── partials/{head.html, header.html, og.html, getphoto.html}
 ```
-
-**Retired / deletable** (carry-overs from the Mac-hub design): `Caddyfile`, `scripts/setup.sh`, `scripts/initial-commit.sh`, `scripts/teardown-sauron.sh`. `scripts/rebuild.sh` stays useful for local preview.
 
 ---
 
@@ -163,7 +180,7 @@ iceland-2025/001/1200.avif  1200.jpg   # mid / mobile lightbox + OG preview (use
 iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 ```
 
-**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Cloudflare's image binding; strips all metadata (privacy-first — protects GPS, also drops camera EXIF); PUTs variants to ASSETS_BUCKET and original to ORIGINALS_BUCKET; updates the manifest; commits text to GitHub; pings the deploy hook.
+**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Transform via Workers (source = R2 custom domain); strips all metadata (privacy-first — protects GPS, also drops camera EXIF); PUTs variants to ASSETS_BUCKET and original to ORIGINALS_BUCKET; stages the updated manifest to `_pending/` in ORIGINALS_BUCKET. Changes reach GitHub only when the admin "Rebuild" button is pressed (`POST /api/rebuild` → `flushStaging` → one commit → deploy hook).
 
 **Downloadable originals:** the original lives in ORIGINALS_BUCKET. Marking a photo `downloadable` copies it into ASSETS_BUCKET; un-marking deletes the public copy and purges the CDN cache. No Worker sits in the download path — the original is a plain CDN object once public.
 
@@ -181,9 +198,11 @@ iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 | DELETE | `/api/projects/:slug/photos/:id` | Delete a photo (all R2 objects + manifest entry) |
 | PATCH | `/api/projects/:slug` | Update metadata `{ title, description, cover, draft, downloadsDefault }` |
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
-| POST | `/api/deploy` | Commit manifest changes → GitHub + ping Pages deploy hook |
+| POST | `/api/rebuild` | Flush staged changes → GitHub commit + ping Pages deploy hook |
+| GET | `/api/settings` | Read `site/data/settings.yaml` |
+| PATCH | `/api/settings` | Update settings |
 
-All routes implemented in `functions/api/[[route]].js` (currently stubbed 501 → Phase 2).
+All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_pending/` (ORIGINALS_BUCKET); `POST /api/rebuild` calls `flushStaging()` then pings the deploy hook.
 
 ---
 
@@ -234,44 +253,24 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Known issues / TODO
 
-- [ ] **Confirm Cloudflare Containers availability** — only needed if we want "keep camera EXIF, strip GPS"; otherwise Worker + strip-all path stands.
-- [ ] Wire EXIF/GPS handling per the chosen compute path.
-- [ ] Drag-to-reorder photos in the admin (manifest array order makes this clean).
-- [ ] Delete retired files once migration is proven (`Caddyfile`, Mac setup scripts).
-- [ ] Keep `site/static/admin/index.html` in sync with `admin/public/index.html` until the old server.js is fully retired.
+- [ ] **Drag-to-reorder photos** in the admin (manifest array order makes this clean).
+- [ ] Keep `site/static/admin/index.html` in sync with `admin/public/index.html` — both are active.
+- [ ] Phase 0: wire Cloudflare/GitHub account bindings for production (see RUNBOOK.md).
 
 ---
 
-## Open decisions (see DEPLOYMENT-PLAN.md §10)
+## Current state (last updated: 2026-05-23)
 
-1. **Admin compute — DECIDED:** Cloudflare Pages Functions + image-transform binding.
-2. **Originals — DECIDED:** copy-to-public via two R2 buckets; no Function in the download path.
-3. **Variant sizes — DECIDED:** 600 / 1200 / 2400 px.
-4. **Format / metadata — DECIDED (reversible):** AVIF + JPEG; strip all metadata by default.
-5. **Hostnames — DECIDED:** single hostname `photos.ctsmith.org`; paths `/admin`, `/api/*`, `/assets/*`.
+### Implementation — COMPLETE
+- Hugo: manifest-driven templates, per-photo permalinks, no build-time image processing
+- Pages Functions: full admin API (`functions/api/[[route]].js`), R2 asset streaming (`functions/assets/[[path]].js`)
+- Staging layer: all writes stage to `_pending/` in ORIGINALS_BUCKET; `POST /api/rebuild` flushes in one commit
+- Image resizing: Transform via Workers via R2 custom domain (`r2.photos.ctsmith.org`)
+- Site settings: `site/data/settings.yaml` editable via admin Settings panel
+- Admin UI: batch upload with per-photo progress, client-side pre-compression (>30 MB), full CRUD
 
----
+### Phase 0 — OPEN (account setup)
+Create ASSETS_BUCKET and ORIGINALS_BUCKET R2 buckets; configure R2 custom domain; configure Pages deploy hook; create Cloudflare Access application gating `/admin*` and `/api*`; create scoped GitHub token; wire all bindings/secrets into the Pages project. See **RUNBOOK.md**.
 
-## Current state (last updated: 2026-05-22)
-
-### Phase 1 — DONE (committed + pushed)
-Hugo refactored: manifest-driven templates, per-photo permalinks, no build-time image processing, Iceland 2025 fixture. assetsBaseURL changed to `/assets` (same-origin). og:image absolute via `absURL`. Admin UI copied to `site/static/admin/index.html` (served at `/admin` by Pages).
-
-### Phase 1.5 — DONE (this session)
-Single-host refactor + Pages Functions skeleton:
-- `site/hugo.toml`: `assetsBaseURL = "/assets"`
-- `partials/og.html`: `absURL` for og:image/twitter:image
-- `site/static/admin/index.html`: admin UI in Hugo static output (served at `/admin`)
-- `functions/assets/[[path]].js`: real R2 stream logic (ASSETS_BUCKET binding required)
-- `functions/api/[[route]].js`: full route table stubbed with 501 + TODO comments
-- `functions/_lib/env.js`: binding/var registry
-- `.dev.vars.example`: documents all required vars for local dev
-
-### Phase 0 — OPEN (needs Cloudflare/GitHub account)
-Create ASSETS_BUCKET and ORIGINALS_BUCKET R2 buckets; configure Pages deploy hook; create Cloudflare Access application gating `/admin*` and `/api*`; create scoped GitHub token; wire all bindings/secrets into the Pages project.
-
-### Phase 2 — OPEN (implement the Functions)
-Replace 501 stubs in `functions/api/[[route]].js` with real logic: resize via IMAGES binding → PUT to R2 → update manifest → commit to GitHub → ping deploy hook. Wire downloadable copy-to-public/purge logic. Reference: `admin/server.js` (old Express implementation).
-
-### Retired (no longer relevant)
-The Mac-Mini hosting stack — Caddy, `cloudflared` tunnel, launchd services, the `sauron` server account, and the macOS Sequoia BTM autostart debugging — is all moot. Detail preserved in git history.
+### Retired
+Mac-Mini hosting stack (Caddy, cloudflared tunnel, launchd, sauron account), Express admin server (`admin/server.js`), `DEPLOYMENT-PLAN.md`, Mac setup scripts — all deleted. Detail preserved in git history.
