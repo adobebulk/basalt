@@ -102,6 +102,12 @@ photos:
     height: 2046
     caption: ''
     downloadable: false
+  - id: '019'
+    key: instagram/019
+    width: 2456
+    height: 1773
+    caption: ''
+    downloadable: false
   - id: '017'
     key: instagram/017
     width: 2456
@@ -112,12 +118,6 @@ photos:
     key: instagram/018
     width: 2456
     height: 1871
-    caption: ''
-    downloadable: false
-  - id: '019'
-    key: instagram/019
-    width: 2456
-    height: 1773
     caption: ''
     downloadable: false
   - id: '020'
