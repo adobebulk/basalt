@@ -21,6 +21,10 @@ import yaml from "js-yaml";
 import { getEnv } from "../_lib/env.js";
 import { getFile, listDir, commitFiles } from "../_lib/github.js";
 import {
+  stageFile, stageDelete, readStaged,
+  getStagedSlugs, isStagedDeleted, flushStaging,
+} from "../_lib/staging.js";
+import {
   parseFrontMatter,
   serializeFrontMatter,
   newSeriesDoc,
@@ -189,10 +193,14 @@ const DEFAULT_SETTINGS = {
   description: "A photo gallery",
 };
 
-async function readManifest(token, repo, slug) {
-  const file = await getFile(token, repo, indexPath(slug));
-  if (!file) return null;
-  return { ...parseFrontMatter(file.content), raw: file.content };
+async function readManifest(env, slug) {
+  const result = await readStaged(
+    env.stagingBucket,
+    indexPath(slug),
+    async (p) => getFile(env.githubToken, env.githubRepo, p)
+  );
+  if (!result) return null;
+  return { ...parseFrontMatter(result.content), raw: result.content };
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -212,27 +220,29 @@ export async function onRequest(ctx) {
     // ── GET /api/projects ────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "projects") {
       const entries = await listDir(env.githubToken, env.githubRepo, "site/content/projects");
-      if (!entries) return json([]);
+      const ghSlugs = entries ? entries.filter((e) => e.type === "dir").map((e) => e.name) : [];
+      const stagedSlugs = await getStagedSlugs(env.stagingBucket);
+      const allSlugs = [...new Set([...ghSlugs, ...stagedSlugs])];
 
-      const dirs = entries.filter((e) => e.type === "dir");
-      const projects = await Promise.all(
-        dirs.map(async (d) => {
-          const file = await getFile(env.githubToken, env.githubRepo, `${d.path}/_index.md`);
-          if (!file) return null;
-          const { data } = parseFrontMatter(file.content);
+      const projects = (await Promise.all(
+        allSlugs.map(async (slug) => {
+          if (await isStagedDeleted(env.stagingBucket, slug)) return null;
+          const manifest = await readManifest(env, slug);
+          if (!manifest) return null;
+          const { data } = manifest;
           return {
-            slug: d.name,
-            title: data.title ?? d.name,
+            slug,
+            title:       data.title       ?? slug,
             description: data.description ?? "",
-            date: data.date ?? "",
-            draft: data.draft ?? true,
-            cover: data.cover ?? "",
-            photoCount: (data.photos ?? []).length,
+            date:        data.date        ?? "",
+            draft:       data.draft       ?? true,
+            cover:       data.cover       ?? "",
+            photoCount:  (data.photos     ?? []).length,
           };
         })
-      );
+      )).filter(Boolean);
 
-      return json(projects.filter(Boolean));
+      return json(projects);
     }
 
     // ── POST /api/projects ───────────────────────────────────────────────────
@@ -241,16 +251,14 @@ export async function onRequest(ctx) {
       if (!title) return err("title required");
 
       const slug = slugify(title);
-      const existing = await getFile(env.githubToken, env.githubRepo, indexPath(slug));
-      if (existing) return err("series already exists", 409);
+      // Check staging and GitHub for existing series
+      const stagedExisting = await readStaged(env.stagingBucket, indexPath(slug), null);
+      if (stagedExisting) return err("series already exists", 409);
+      const ghExisting = await getFile(env.githubToken, env.githubRepo, indexPath(slug));
+      if (ghExisting) return err("series already exists", 409);
 
       const content = newSeriesDoc({ title, description, slug });
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: create series ${slug}`,
-        files: [{ path: indexPath(slug), content }],
-      });
+      await stageFile(env.stagingBucket, indexPath(slug), content);
 
       return json({ slug, title, draft: true }, 201);
     }
@@ -263,7 +271,7 @@ export async function onRequest(ctx) {
       segments[2] === "photos"
     ) {
       const slug = segments[1];
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
       return json(manifest.data.photos ?? []);
     }
@@ -279,7 +287,7 @@ export async function onRequest(ctx) {
       if (!env.assetsBucket) return err("ASSETS_BUCKET not configured", 503);
       if (!env.originalsBucket) return err("ORIGINALS_BUCKET not configured", 503);
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       const formData = await request.formData();
@@ -338,12 +346,9 @@ export async function onRequest(ctx) {
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
       gitFiles.push({ path: indexPath(slug), content: updatedManifest });
 
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: add ${addedPhotos.length} photo(s) to ${slug}`,
-        files: gitFiles,
-      });
+      for (const { path, content } of gitFiles) {
+        await stageFile(env.stagingBucket, path, content);
+      }
 
       return json({ uploaded: addedPhotos }, 201);
     }
@@ -358,7 +363,7 @@ export async function onRequest(ctx) {
       const [, slug, , id] = segments;
       const body = await request.json();
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       let photos = [...(manifest.data.photos ?? [])];
@@ -401,12 +406,7 @@ export async function onRequest(ctx) {
       const updatedData = { ...manifest.data, photos };
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
 
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: update photo ${slug}/${id}`,
-        files: [{ path: indexPath(slug), content: updatedManifest }],
-      });
+      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
 
       return json(updated);
     }
@@ -420,7 +420,7 @@ export async function onRequest(ctx) {
     ) {
       const [, slug, , id] = segments;
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       const photos = manifest.data.photos ?? [];
@@ -447,13 +447,8 @@ export async function onRequest(ctx) {
       }
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
 
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: delete photo ${slug}/${id}`,
-        files: [{ path: indexPath(slug), content: updatedManifest }],
-        deletions: [stubPath(slug, id)],
-      });
+      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
+      await stageDelete(env.stagingBucket, stubPath(slug, id));
 
       return json({ deleted: id });
     }
@@ -466,7 +461,7 @@ export async function onRequest(ctx) {
     ) {
       const slug = segments[1];
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       const photos = manifest.data.photos ?? [];
@@ -484,18 +479,11 @@ export async function onRequest(ctx) {
       });
       await Promise.all(allR2Deletes);
 
-      // Build GitHub deletions: _index.md + all per-photo stubs.
-      const deletions = [
-        indexPath(slug),
-        ...photos.map((photo) => stubPath(slug, photo.id)),
-      ];
-
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: delete series ${slug}`,
-        deletions,
-      });
+      // Stage deletion of all per-photo stubs and the manifest.
+      await Promise.all(photos.map((photo) =>
+        stageDelete(env.stagingBucket, stubPath(slug, photo.id))
+      ));
+      await stageDelete(env.stagingBucket, indexPath(slug));
 
       return json({ deleted: slug });
     }
@@ -509,7 +497,7 @@ export async function onRequest(ctx) {
       const slug = segments[1];
       const body = await request.json();
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       const updatableFields = ["title", "description", "cover", "draft", "downloadsDefault"];
@@ -519,12 +507,7 @@ export async function onRequest(ctx) {
       }
 
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: update series metadata for ${slug}`,
-        files: [{ path: indexPath(slug), content: updatedManifest }],
-      });
+      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
 
       return json(updatedData);
     }
@@ -539,18 +522,13 @@ export async function onRequest(ctx) {
       const slug = segments[1];
       const { draft } = await request.json();
 
-      const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
+      const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
       const updatedData = { ...manifest.data, draft: Boolean(draft) };
       const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
 
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: `content: ${draft ? "unpublish" : "publish"} series ${slug}`,
-        files: [{ path: indexPath(slug), content: updatedManifest }],
-      });
+      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
 
       return json({ slug, draft: Boolean(draft) });
     }
@@ -559,13 +537,21 @@ export async function onRequest(ctx) {
     if (method === "POST" && segments.length === 1 && segments[0] === "rebuild") {
       if (!env.deployHookUrl) return err("DEPLOY_HOOK_URL not configured", 503);
 
+      const stagingResult = await flushStaging(
+        env.stagingBucket, env.githubToken, env.githubRepo);
+
       const res = await fetch(env.deployHookUrl, { method: "POST" });
       if (!res.ok) {
         const body = await res.text();
         return err(`Deploy hook returned ${res.status}: ${body}`, 502);
       }
 
-      return json({ ok: true, message: "Cloudflare Pages build triggered." });
+      return json({
+        ok: true,
+        message: stagingResult.noop
+          ? "Build triggered (no content changes)."
+          : `Committed ${stagingResult.files} file(s), triggered build.`,
+      });
     }
 
     // ── POST /api/deploy ─────────────────────────────────────────────────────
@@ -583,28 +569,30 @@ export async function onRequest(ctx) {
 
     // ── GET /api/settings ────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "settings") {
-      const file = await getFile(env.githubToken, env.githubRepo, settingsPath);
-      if (!file) return json(DEFAULT_SETTINGS);
-      const loaded = yaml.load(file.content) ?? {};
-      return json({ ...DEFAULT_SETTINGS, ...loaded });
+      const result = await readStaged(
+        env.stagingBucket,
+        settingsPath,
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      const settings = result ? (yaml.load(result.content) ?? {}) : {};
+      return json({ ...DEFAULT_SETTINGS, ...settings });
     }
 
     // ── PATCH /api/settings ──────────────────────────────────────────────────
     if (method === "PATCH" && segments.length === 1 && segments[0] === "settings") {
       const body = await request.json();
-      const file = await getFile(env.githubToken, env.githubRepo, settingsPath);
-      const current = file ? (yaml.load(file.content) ?? {}) : {};
+      const result = await readStaged(
+        env.stagingBucket,
+        settingsPath,
+        async (p) => getFile(env.githubToken, env.githubRepo, p)
+      );
+      const current = result ? (yaml.load(result.content) ?? {}) : {};
       const allowedKeys = ["title", "navLabel", "photographer", "description"];
       const updated = { ...DEFAULT_SETTINGS, ...current };
       for (const k of allowedKeys) {
         if (body[k] !== undefined) updated[k] = body[k];
       }
-      await commitFiles({
-        token: env.githubToken,
-        repo: env.githubRepo,
-        message: "config: update site settings",
-        files: [{ path: settingsPath, content: yaml.dump(updated) }],
-      });
+      await stageFile(env.stagingBucket, settingsPath, yaml.dump(updated, { lineWidth: -1 }));
       return json(updated);
     }
 

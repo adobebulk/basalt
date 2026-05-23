@@ -27,6 +27,7 @@ export function getEnv(ctx) {
   return {
     assetsBucket:    e.ASSETS_BUCKET,
     originalsBucket: e.ORIGINALS_BUCKET,
+    stagingBucket:   e.ORIGINALS_BUCKET,   // staging uses _pending/ prefix in the private bucket
     assetsR2Url:     e.ASSETS_R2_PUBLIC_URL,
     githubToken:     e.GITHUB_TOKEN,
     githubRepo:      e.GITHUB_REPO,
