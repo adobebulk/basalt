@@ -5,11 +5,16 @@
  * Reference: CLAUDE.md "Admin API" table + admin/server.js (old Express implementation).
  *
  * Upload pipeline per photo:
- *   1. Resize via IMAGES binding → 600/1200/2400 px × AVIF + JPEG (strips all metadata)
- *   2. PUT variants → ASSETS_BUCKET at <slug>/<id>/{600,1200,2400}.{avif,jpg}
- *   3. PUT original → ORIGINALS_BUCKET at <slug>/<id>/original.jpg
+ *   1. PUT original → ASSETS_BUCKET at <slug>/<id>/original.jpg (temporarily public for fetch)
+ *   2. For each of 6 variants (600/1200/2400 × avif/jpg): fetch the original URL with
+ *      cf.image options (Transform via Workers) → PUT response body to ASSETS_BUCKET
+ *   3. If not downloadable: move original to ORIGINALS_BUCKET, delete from ASSETS_BUCKET
  *   4. Append photo entry to _index.md manifest + create <id>.md stub
  *   5. Commit both files to GitHub (single commit via Trees API)
+ *
+ * Image transforms use "Transform via Workers" (fetch with cf.image), not the Images
+ * binding — the binding is not supported for Pages Functions.
+ * Docs: https://developers.cloudflare.com/images/transform-images/transform-via-workers/
  */
 
 import { getEnv } from "../_lib/env.js";
@@ -37,59 +42,48 @@ const err = (msg, status = 400) => json({ error: msg }, status);
 
 const SIZES = [600, 1200, 2400];
 const FORMATS = [
-  { format: "image/avif", ext: "avif" },
-  { format: "image/jpeg", ext: "jpg" },
+  { format: "avif", ext: "avif", contentType: "image/avif" },
+  { format: "jpeg", ext: "jpg",  contentType: "image/jpeg" },
 ];
 
+const BASE_URL = "https://photos.ctsmith.org";
+
 /**
- * Generate all 6 variants (3 sizes × 2 formats) for a single photo.
- * Returns an array of { key, buffer, contentType } ready to PUT to R2.
- * Cloudflare Images strips all metadata by default (no GPS leaks).
+ * Generate all 6 variants for one photo via "Transform via Workers".
+ * The original must already be in ASSETS_BUCKET before calling this.
+ * Strips all metadata (metadata: "none") — no GPS or EXIF in published files.
+ * Returns array of { key, buffer, contentType } ready to PUT to R2.
  */
-async function generateVariants(images, slug, id, originalBuffer) {
+async function generateVariants(slug, id) {
+  const originalUrl = `${BASE_URL}/assets/${slug}/${id}/original.jpg`;
   const variants = [];
 
   for (const size of SIZES) {
-    for (const { format, ext } of FORMATS) {
-      // Each transform needs a fresh ReadableStream from the original buffer.
-      const stream = new ReadableStream({
-        start(controller) {
-          controller.enqueue(new Uint8Array(originalBuffer));
-          controller.close();
+    for (const { format, ext, contentType } of FORMATS) {
+      const res = await fetch(originalUrl, {
+        cf: {
+          image: {
+            width: size,
+            fit: "scale-down",
+            format,
+            metadata: "none",
+          },
         },
       });
 
-      const result = await images
-        .input(stream)
-        .transform({ width: size, fit: "scale-down" })
-        .output({ format });
-
-      const response = result.response();
-      const buffer = await response.arrayBuffer();
+      if (!res.ok) {
+        throw new Error(`Image transform failed for ${size}.${ext}: ${res.status}`);
+      }
 
       variants.push({
         key: `${slug}/${id}/${size}.${ext}`,
-        buffer,
-        contentType: format,
+        buffer: await res.arrayBuffer(),
+        contentType,
       });
     }
   }
 
   return variants;
-}
-
-/**
- * Get pixel dimensions of an image via the IMAGES binding .info() call.
- */
-async function getImageDimensions(images, buffer) {
-  const stream = new ReadableStream({
-    start(controller) {
-      controller.enqueue(new Uint8Array(buffer));
-      controller.close();
-    },
-  });
-  const info = await images.input(stream).info();
-  return { width: info.width, height: info.height };
 }
 
 // ─── CDN cache purge ─────────────────────────────────────────────────────────
@@ -212,7 +206,6 @@ export async function onRequest(ctx) {
       const slug = segments[1];
       if (!env.assetsBucket) return err("ASSETS_BUCKET not configured", 503);
       if (!env.originalsBucket) return err("ORIGINALS_BUCKET not configured", 503);
-      if (!env.images) return err("IMAGES binding not configured", 503);
 
       const manifest = await readManifest(env.githubToken, env.githubRepo, slug);
       if (!manifest) return err("series not found", 404);
@@ -229,26 +222,33 @@ export async function onRequest(ctx) {
         const originalBuffer = await file.arrayBuffer();
         const id = nextPhotoId(photos);
         const key = `${slug}/${id}`;
+        const originalKey = `${key}/original.jpg`;
 
-        // Get dimensions
-        const { width, height } = await getImageDimensions(env.images, originalBuffer);
+        // 1. PUT original to ASSETS_BUCKET so the transform fetch URL resolves.
+        await env.assetsBucket.put(originalKey, originalBuffer, {
+          httpMetadata: { contentType: "image/jpeg" },
+        });
 
-        // Generate 6 variants
-        const variants = await generateVariants(env.images, slug, id, originalBuffer);
+        // 2. Generate 6 variants via Transform via Workers (fetch with cf.image).
+        //    width/height default to 0 — templates degrade gracefully without them.
+        const variants = await generateVariants(slug, id);
 
-        // PUT variants to ASSETS_BUCKET
+        // 3. PUT variants to ASSETS_BUCKET.
         for (const v of variants) {
           await env.assetsBucket.put(v.key, v.buffer, {
             httpMetadata: { contentType: v.contentType },
           });
         }
 
-        // PUT original to ORIGINALS_BUCKET (private)
-        await env.originalsBucket.put(`${key}/original.jpg`, originalBuffer, {
+        // 4. If not downloadable: move original to private bucket, remove from public.
+        //    If downloadable: original stays in ASSETS_BUCKET (already public).
+        await env.originalsBucket.put(originalKey, originalBuffer, {
           httpMetadata: { contentType: "image/jpeg" },
         });
+        // Default is not downloadable — delete the temporarily-public original.
+        await env.assetsBucket.delete(originalKey);
 
-        const photo = { id, key, width, height, caption: "", downloadable: false };
+        const photo = { id, key, width: 0, height: 0, caption: "", downloadable: false };
         photos.push(photo);
         addedPhotos.push(photo);
 

@@ -11,7 +11,6 @@
  *
  *   ASSETS_BUCKET      R2 binding — public bucket (web variants + public originals)
  *   ORIGINALS_BUCKET   R2 binding — private bucket (all originals; no public domain)
- *   IMAGES             Cloudflare Images binding (image-transform; resize + format)
  *   GITHUB_TOKEN       Secret — fine-grained PAT, Contents read/write on this repo
  *   GITHUB_REPO        Var — "owner/repo", e.g. "adobebulk/static-photos"
  *   DEPLOY_HOOK_URL    Secret — Cloudflare Pages deploy hook URL (admin "Rebuild" button)
@@ -28,7 +27,6 @@ export function getEnv(ctx) {
   return {
     assetsBucket:    e.ASSETS_BUCKET,
     originalsBucket: e.ORIGINALS_BUCKET,
-    images:          e.IMAGES,
     githubToken:     e.GITHUB_TOKEN,
     githubRepo:      e.GITHUB_REPO,
     deployHookUrl:   e.DEPLOY_HOOK_URL,
