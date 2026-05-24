@@ -453,6 +453,15 @@
     @media (max-width: 480px) {
       .tab-btn { padding: 12px 20px; flex: 1; text-align: center; }
 
+      /* Topbar: stack brand above buttons */
+      .topbar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 0 8px; }
+      .topbar-left { width: 100%; justify-content: space-between; }
+      .topbar-nav { width: 100%; }
+      .topbar-nav button { flex: 1; text-align: center; font-size: 13px; }
+
+      /* Hide slug column in series table */
+      .col-slug { display: none; }
+
       /* Touch targets: 44px min height */
       .btn-action, .btn-outline, .btn-danger { min-height: 44px; display: flex; align-items: center; justify-content: center; }
       .btn-icon { min-height: 44px; min-width: 44px; justify-content: center; display: flex; align-items: center; }
@@ -519,7 +528,7 @@
       <table>
         <thead>
           <tr>
-            <th style="width:130px">Slug</th>
+            <th class="col-slug" style="width:130px">Slug</th>
             <th>Title</th>
             <th style="width:70px;text-align:right">Photos</th>
             <th style="width:70px">Status</th>
@@ -592,7 +601,10 @@
         <textarea id="post-excerpt" rows="2" style="min-height:50px" placeholder="Short excerpt for cards — leave blank to skip"></textarea>
       </div>
       <div class="field">
-        <label>Body (markdown)</label>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <label style="margin-bottom:0">Body (markdown)</label>
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker()">⊕ Insert photo</button>
+        </div>
         <textarea id="post-body" rows="12" style="min-height:220px" placeholder="Write your post in markdown…"></textarea>
       </div>
       <div class="field-check">
@@ -648,6 +660,40 @@
       </div>
 
       <div><button class="btn-action" onclick="saveSettings()">Save settings →</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Photo picker overlay ──────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-photo-picker" onclick="closeIfBackdrop(event,'overlay-photo-picker')">
+  <div class="sheet" style="max-height:80svh">
+    <div class="sheet-header">
+      <span class="sheet-title">Insert Photo</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-photo-picker')">close [esc]</button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Series</label>
+        <select id="picker-series-select" onchange="loadPickerPhotos()">
+          <option value="">Select series…</option>
+        </select>
+      </div>
+      <div id="picker-photo-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(80px,1fr));gap:8px;margin-top:4px"></div>
+      <div class="field" style="margin-top:8px">
+        <label>Size</label>
+        <select id="picker-size">
+          <option value="1200">1200px (default)</option>
+          <option value="600">600px (thumbnail)</option>
+          <option value="2400">2400px (full)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Alt text / caption (optional)</label>
+        <input type="text" id="picker-alt" placeholder="Leave blank to use photo caption">
+      </div>
+      <div>
+        <button class="btn-action" id="picker-insert-btn" onclick="insertPhotoMarkdown()" disabled style="opacity:.4;pointer-events:none">Insert photo →</button>
+      </div>
     </div>
   </div>
 </div>
@@ -743,7 +789,7 @@ function renderTable() {
   }
   tbody.innerHTML = projects.map(p => `
     <tr onclick="openDetail('${p.slug}')">
-      <td><span class="slug-badge">${esc(p.slug)}</span></td>
+      <td class="col-slug"><span class="slug-badge">${esc(p.slug)}</span></td>
       <td>${esc(p.title)}</td>
       <td style="text-align:right;color:var(--muted)">${p.photoCount}</td>
       <td><span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span></td>
@@ -1145,11 +1191,19 @@ async function deleteSeries(slug) {
 }
 
 // ── Posts ─────────────────────────────────────────────────────────
+let postsFeaturedSlugs = new Set(); // slugs currently in settings.featured[] with type=post
+
 async function loadPostsList() {
   const container = document.getElementById('posts-list');
   container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Loading…</div>`;
   try {
-    posts = await api('GET', '/posts');
+    const [loadedPosts, settings] = await Promise.all([
+      api('GET', '/posts'),
+      api('GET', '/settings').catch(() => ({})),
+    ]);
+    posts = loadedPosts;
+    const featured = Array.isArray(settings.featured) ? settings.featured : [];
+    postsFeaturedSlugs = new Set(featured.filter(f => f.type === 'post').map(f => f.slug));
     renderPostsList();
   } catch(e) {
     container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Failed to load — ${esc(e.message)}</div>`;
@@ -1170,7 +1224,7 @@ function renderPostsList() {
         <div class="post-card-meta">
           <span>${p.date || '—'}</span>
           ${p.draft ? `<span class="badge badge-draft">Draft</span>` : `<span class="badge badge-live">Live</span>`}
-          ${p.featured ? `<span class="badge badge-featured">Featured</span>` : ''}
+          ${postsFeaturedSlugs.has(p.slug) ? `<span class="badge badge-featured">Featured</span>` : ''}
         </div>
       </div>
       <div class="post-card-actions">
@@ -1201,12 +1255,17 @@ async function openEditPost(slug) {
   document.getElementById('post-delete-btn').style.display = '';
   openSheet('overlay-post');
   try {
-    const p = await api('GET', `/posts/${slug}`);
-    document.getElementById('post-title').value    = p.title    || '';
-    document.getElementById('post-excerpt').value  = p.excerpt  || '';
-    document.getElementById('post-body').value     = p.body     || '';
-    document.getElementById('post-featured').checked = !!p.featured;
-    document.getElementById('post-draft').checked    = !!p.draft;
+    const [p, settings] = await Promise.all([
+      api('GET', `/posts/${slug}`),
+      api('GET', '/settings').catch(() => ({})),
+    ]);
+    document.getElementById('post-title').value   = p.title   || '';
+    document.getElementById('post-excerpt').value = p.excerpt || '';
+    document.getElementById('post-body').value    = p.body    || '';
+    document.getElementById('post-draft').checked = !!p.draft;
+    // Source of truth for featured is settings.featured[], not post front matter
+    const featuredArr = Array.isArray(settings.featured) ? settings.featured : [];
+    document.getElementById('post-featured').checked = featuredArr.some(f => f.type === 'post' && f.slug === slug);
   } catch(e) { toast('Failed to load post: ' + e.message, true); }
 }
 
@@ -1220,12 +1279,33 @@ async function savePost() {
   if (!title) { toast('Title is required', true); return; }
 
   try {
+    let slug;
     if (!editingPost) {
       await api('POST', '/posts', { title, excerpt, body, featured });
+      // Find the new post's slug by re-fetching the list and matching by title
+      try {
+        const allPosts = await api('GET', '/posts');
+        const match = allPosts.find(p => p.title === title);
+        slug = match ? match.slug : null;
+      } catch(_) {}
       toast(`Post "${title}" created`);
     } else {
+      slug = editingPost;
       await api('PATCH', `/posts/${editingPost}`, { title, excerpt, body, featured, draft });
       toast('Post saved');
+    }
+    // Sync featured state into settings.featured[] (the real source of truth for the homepage)
+    if (slug) {
+      try {
+        const currentSettings = await api('GET', '/settings');
+        const featuredArr = Array.isArray(currentSettings.featured) ? currentSettings.featured : [];
+        const alreadyIn = featuredArr.some(f => f.type === 'post' && f.slug === slug);
+        if (featured && !alreadyIn) {
+          await api('PATCH', '/settings', { featured: [{ type: 'post', slug, label: '' }, ...featuredArr] });
+        } else if (!featured && alreadyIn) {
+          await api('PATCH', '/settings', { featured: featuredArr.filter(f => !(f.type === 'post' && f.slug === slug)) });
+        }
+      } catch(_) {}
     }
     closeSheet('overlay-post');
     setRebuildStatus('dirty', 'Rebuild needed');
@@ -1263,6 +1343,83 @@ async function deletePost() {
     toast(`Deleted "${title}"`);
     await loadPostsList();
   } catch(e) { toast('Delete failed: ' + e.message, true); }
+}
+
+// ── Photo picker (for post body) ──────────────────────────────────
+let pickerSelectedPhoto = null;
+
+async function openPhotoPicker() {
+  pickerSelectedPhoto = null;
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+
+  const select = document.getElementById('picker-series-select');
+  select.innerHTML = '<option value="">Select series…</option>';
+  try {
+    const projs = await api('GET', '/projects');
+    projs.forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.slug;
+      opt.textContent = p.title || p.slug;
+      select.appendChild(opt);
+    });
+  } catch(e) { toast('Failed to load series', true); return; }
+  document.getElementById('picker-photo-grid').innerHTML = '';
+  document.getElementById('picker-alt').value = '';
+  openSheet('overlay-photo-picker');
+}
+
+async function loadPickerPhotos() {
+  pickerSelectedPhoto = null;
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+
+  const slug = document.getElementById('picker-series-select').value;
+  const grid = document.getElementById('picker-photo-grid');
+  if (!slug) { grid.innerHTML = ''; return; }
+  grid.innerHTML = '<span style="font-size:12px;color:var(--muted)">Loading…</span>';
+  try {
+    const photos = await api('GET', `/projects/${slug}/photos`);
+    grid.innerHTML = '';
+    photos.forEach(p => {
+      const img = document.createElement('img');
+      img.src = `/assets/${p.key}/600.jpg`;
+      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;cursor:pointer;border-radius:2px;border:2px solid transparent;transition:border-color .1s';
+      img.title = p.caption || p.id;
+      img.dataset.photoId = p.id;
+      img.onclick = () => selectPickerPhoto(p, img);
+      grid.appendChild(img);
+    });
+  } catch(e) { grid.innerHTML = '<span style="font-size:12px;color:var(--red)">Failed to load</span>'; }
+}
+
+function selectPickerPhoto(photo, imgEl) {
+  pickerSelectedPhoto = photo;
+  // Highlight selected, clear others
+  document.querySelectorAll('#picker-photo-grid img').forEach(el => {
+    el.style.borderColor = el === imgEl ? 'var(--green)' : 'transparent';
+  });
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = false; btn.style.opacity = ''; btn.style.pointerEvents = '';
+}
+
+function insertPhotoMarkdown() {
+  const photo = pickerSelectedPhoto;
+  if (!photo) return;
+  const size   = document.getElementById('picker-size').value;
+  const altRaw = document.getElementById('picker-alt').value.trim();
+  const alt    = altRaw || photo.caption || photo.id;
+  const url    = `/assets/${photo.key}/${size}.jpg`;
+  const md     = `![${alt}](${url})\n`;
+
+  const ta = document.getElementById('post-body');
+  const start = ta.selectionStart;
+  const end   = ta.selectionEnd;
+  ta.value = ta.value.slice(0, start) + md + ta.value.slice(end);
+  ta.selectionStart = ta.selectionEnd = start + md.length;
+  ta.focus();
+  closeSheet('overlay-photo-picker');
+  toast('Photo inserted');
 }
 
 // ── Rebuild ───────────────────────────────────────────────────────
@@ -1387,7 +1544,7 @@ function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) 
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  ['overlay-detail','overlay-new','overlay-settings','overlay-post'].forEach(id => {
+  ['overlay-detail','overlay-new','overlay-settings','overlay-post','overlay-photo-picker'].forEach(id => {
     if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
   });
 });

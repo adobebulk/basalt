@@ -315,10 +315,23 @@ During local `wrangler pages dev`, logs print to the terminal.
 ## Current state (last updated: 2026-05-23)
 
 ### v0.1.0 — CURRENT (Basalt fork)
-- Forked from static-photos v1.2.3
-- Renamed package to `basalt`, theme to `basalt`
+- Forked from static-photos v1.2.3; renamed package and theme to `basalt`
+- Synced from static-photos v1.3.0–v1.3.3 (see below for details)
 - Added static-photos as upstream git remote for CMS layer fixes
-- All static-photos functionality preserved intact
+
+### v1.3.3 (synced from static-photos)
+- Fix: "Featured" badge on post cards now reads from `settings.featured[]` (the source of truth) instead of post front matter — deselecting a post in Settings now immediately clears the badge
+
+### v1.3.2 (synced from static-photos)
+- Fix: photo picker ESC key now closes the overlay; picker now uses `openSheet()` so body scroll is locked while picker is open
+
+### v1.3.1 (synced from static-photos)
+- Fix: photo picker "Insert photo →" button is now an explicit green verb button; clicking a thumbnail selects it (green border highlight) but does not insert — the button must be clicked to confirm
+
+### v1.3.0 (synced from static-photos)
+- Admin: "Feature on homepage" checkbox in post editor now syncs to `settings.featured[]`; `openEditPost` reads featured state from settings, not post front matter
+- Admin: photo embed in post body — "⊕ Insert photo" button opens a series/photo picker that inserts markdown image syntax at cursor position
+- Admin: mobile topbar now stacks (brand row above buttons row) on ≤480px; SLUG column hidden in series table on mobile
 
 ### v1.2.3
 - Hero image: caption overlay from photo manifest; click always goes to photo permalink (derived from `heroPhotoKey`, not `heroLink`)
