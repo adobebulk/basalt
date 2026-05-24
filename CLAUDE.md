@@ -326,7 +326,7 @@ During local `wrangler pages dev`, logs print to the terminal.
 - Admin: photo picker ESC closes overlay; `openSheet` used for scroll-lock consistency
 
 ### v1.3.1 (synced from static-photos)
-- Admin: photo picker requires explicit "Insert" button — no implicit insert on thumbnail click
+- Fix: photo picker "Insert photo →" button is now an explicit green verb button; clicking a thumbnail selects it (green border highlight) but does not insert — the button must be clicked to confirm
 
 ### v1.3.0 (synced from static-photos)
 - Admin: "Feature on homepage" checkbox in post editor now syncs to `settings.featured[]`; `openEditPost` reads featured state from settings, not post front matter

@@ -691,6 +691,9 @@
         <label>Alt text / caption (optional)</label>
         <input type="text" id="picker-alt" placeholder="Leave blank to use photo caption">
       </div>
+      <div>
+        <button class="btn-action" id="picker-insert-btn" onclick="insertPhotoMarkdown()" disabled style="opacity:.4;pointer-events:none">Insert photo →</button>
+      </div>
     </div>
   </div>
 </div>
@@ -1335,7 +1338,13 @@ async function deletePost() {
 }
 
 // ── Photo picker (for post body) ──────────────────────────────────
+let pickerSelectedPhoto = null;
+
 async function openPhotoPicker() {
+  pickerSelectedPhoto = null;
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+
   const select = document.getElementById('picker-series-select');
   select.innerHTML = '<option value="">Select series…</option>';
   try {
@@ -1353,6 +1362,10 @@ async function openPhotoPicker() {
 }
 
 async function loadPickerPhotos() {
+  pickerSelectedPhoto = null;
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+
   const slug = document.getElementById('picker-series-select').value;
   const grid = document.getElementById('picker-photo-grid');
   if (!slug) { grid.innerHTML = ''; return; }
@@ -1363,15 +1376,28 @@ async function loadPickerPhotos() {
     photos.forEach(p => {
       const img = document.createElement('img');
       img.src = `/assets/${p.key}/600.jpg`;
-      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;cursor:pointer;border-radius:2px;border:2px solid transparent';
+      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;cursor:pointer;border-radius:2px;border:2px solid transparent;transition:border-color .1s';
       img.title = p.caption || p.id;
-      img.onclick = () => insertPhotoMarkdown(p);
+      img.dataset.photoId = p.id;
+      img.onclick = () => selectPickerPhoto(p, img);
       grid.appendChild(img);
     });
   } catch(e) { grid.innerHTML = '<span style="font-size:12px;color:var(--red)">Failed to load</span>'; }
 }
 
-function insertPhotoMarkdown(photo) {
+function selectPickerPhoto(photo, imgEl) {
+  pickerSelectedPhoto = photo;
+  // Highlight selected, clear others
+  document.querySelectorAll('#picker-photo-grid img').forEach(el => {
+    el.style.borderColor = el === imgEl ? 'var(--green)' : 'transparent';
+  });
+  const btn = document.getElementById('picker-insert-btn');
+  btn.disabled = false; btn.style.opacity = ''; btn.style.pointerEvents = '';
+}
+
+function insertPhotoMarkdown() {
+  const photo = pickerSelectedPhoto;
+  if (!photo) return;
   const size   = document.getElementById('picker-size').value;
   const altRaw = document.getElementById('picker-alt').value.trim();
   const alt    = altRaw || photo.caption || photo.id;
