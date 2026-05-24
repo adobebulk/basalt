@@ -323,7 +323,7 @@ During local `wrangler pages dev`, logs print to the terminal.
 - Admin: Featured badge on post cards reads `settings.featured[]` (source of truth), not post front matter
 
 ### v1.3.2 (synced from static-photos)
-- Admin: photo picker ESC closes overlay; `openSheet` used for scroll-lock consistency
+- Fix: photo picker ESC key now closes the overlay; picker now uses `openSheet()` so body scroll is locked while picker is open
 
 ### v1.3.1 (synced from static-photos)
 - Fix: photo picker "Insert photo →" button is now an explicit green verb button; clicking a thumbnail selects it (green border highlight) but does not insert — the button must be clicked to confirm

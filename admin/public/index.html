@@ -1358,7 +1358,7 @@ async function openPhotoPicker() {
   } catch(e) { toast('Failed to load series', true); return; }
   document.getElementById('picker-photo-grid').innerHTML = '';
   document.getElementById('picker-alt').value = '';
-  document.getElementById('overlay-photo-picker').classList.remove('hidden');
+  openSheet('overlay-photo-picker');
 }
 
 async function loadPickerPhotos() {
@@ -1536,7 +1536,7 @@ function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) 
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  ['overlay-detail','overlay-new','overlay-settings','overlay-post'].forEach(id => {
+  ['overlay-detail','overlay-new','overlay-settings','overlay-post','overlay-photo-picker'].forEach(id => {
     if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
   });
 });
