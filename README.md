@@ -2,7 +2,9 @@
 
 A self-hostable Hugo CMS with a serverless admin panel, Cloudflare R2 asset storage, and GitHub-based content versioning. Supports photo series with a full image-processing pipeline, text posts, and is designed to add new content types cleanly alongside existing ones.
 
-Everything runs on **Cloudflare + GitHub** — no always-on server to maintain. Current version: **0.1.0**
+Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.1.0**
+
+Content types: **photo series** (grid + lightbox + per-photo permalinks with optional long-form body text) and **text posts** (pure markdown, no photos required). The homepage supports an optional hero image (with caption overlay, linking to the photo's permalink), a curated featured row (series, posts, or individual photos), the full series grid, and a recent posts strip.
 
 ---
 
