@@ -320,7 +320,7 @@ During local `wrangler pages dev`, logs print to the terminal.
 - Added static-photos as upstream git remote for CMS layer fixes
 
 ### v1.3.3 (synced from static-photos)
-- Admin: Featured badge on post cards reads `settings.featured[]` (source of truth), not post front matter
+- Fix: "Featured" badge on post cards now reads from `settings.featured[]` (the source of truth) instead of post front matter — deselecting a post in Settings now immediately clears the badge
 
 ### v1.3.2 (synced from static-photos)
 - Fix: photo picker ESC key now closes the overlay; picker now uses `openSheet()` so body scroll is locked while picker is open

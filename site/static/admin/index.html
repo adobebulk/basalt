@@ -1191,11 +1191,19 @@ async function deleteSeries(slug) {
 }
 
 // ── Posts ─────────────────────────────────────────────────────────
+let postsFeaturedSlugs = new Set(); // slugs currently in settings.featured[] with type=post
+
 async function loadPostsList() {
   const container = document.getElementById('posts-list');
   container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Loading…</div>`;
   try {
-    posts = await api('GET', '/posts');
+    const [loadedPosts, settings] = await Promise.all([
+      api('GET', '/posts'),
+      api('GET', '/settings').catch(() => ({})),
+    ]);
+    posts = loadedPosts;
+    const featured = Array.isArray(settings.featured) ? settings.featured : [];
+    postsFeaturedSlugs = new Set(featured.filter(f => f.type === 'post').map(f => f.slug));
     renderPostsList();
   } catch(e) {
     container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Failed to load — ${esc(e.message)}</div>`;
@@ -1216,7 +1224,7 @@ function renderPostsList() {
         <div class="post-card-meta">
           <span>${p.date || '—'}</span>
           ${p.draft ? `<span class="badge badge-draft">Draft</span>` : `<span class="badge badge-live">Live</span>`}
-          ${p.featured ? `<span class="badge badge-featured">Featured</span>` : ''}
+          ${postsFeaturedSlugs.has(p.slug) ? `<span class="badge badge-featured">Featured</span>` : ''}
         </div>
       </div>
       <div class="post-card-actions">
