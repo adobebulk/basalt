@@ -80,7 +80,7 @@ This is not optional clean-up. A commit that skips any of these is incomplete. C
 | Admin backend | Pages Functions (`/api/*`) | Serverless. Existing monospace admin UI kept; backend rewritten to talk to R2 + GitHub. |
 | Admin UI | Static HTML at `/admin` | `site/static/admin/index.html` — served by Pages, gated by Access. |
 | Auth | Cloudflare Access | Gates `/admin*` and `/api*` on `photos.ctsmith.org`. |
-| Deploy trigger | Cloudflare Pages deploy hook | The admin "Rebuild" button POSTs to `DEPLOY_HOOK_URL`. |
+| Deploy trigger | Cloudflare Pages deploy hook | The admin "Rebuild" button POSTs to `DEPLOY_HOOK_URL`. The rebuild bar polls `GET /api/deploy-status` when `CF_ACCOUNT_ID` + `CF_API_TOKEN` (Pages Read) are set. |
 
 ---
 
@@ -120,7 +120,7 @@ static-photos/
     │   └── <series-slug>/      ← branch bundle
     │       ├── _index.md       ← manifest: front matter + photos[] (NO image files)
     │       └── <id>.md         ← per-photo permalink stub (photoid only)
-    └── themes/gallery/layouts/
+    └── themes/basalt/layouts/
         ├── index.html           ← homepage: series grid (manifest-driven)
         ├── 404.html
         ├── projects/
@@ -153,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.1.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.2.0**
 
 ---
 
@@ -180,6 +180,9 @@ photos:
     body: |                  # optional long-form markdown; shown on per-photo permalink
       The light at 2am was unlike anything I'd seen.
     downloadable: true       # per-photo override of downloadsDefault
+seriesPosts:               # optional list of posts attached to this series
+  - slug: "my-trip-report"
+    label: ""              # optional display override; falls back to post title
 ---
 ```
 
@@ -194,9 +197,9 @@ iceland-2025/001/1200.avif  1200.jpg   # mid / mobile lightbox + OG preview (use
 iceland-2025/001/600.avif   600.jpg    # grid thumbnail
 ```
 
-**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Transform via Workers (source = R2 custom domain); strips all metadata (privacy-first — protects GPS, also drops camera EXIF); PUTs variants to ASSETS_BUCKET and original to ORIGINALS_BUCKET; stages the updated manifest to `_pending/` in ORIGINALS_BUCKET. Changes reach GitHub only when the admin "Rebuild" button is pressed (`POST /api/rebuild` → `flushStaging` → one commit → deploy hook).
+**On upload** the admin: resizes to 600/1200/2400px AVIF + JPEG via Transform via Workers (source = R2 custom domain); strips all metadata (privacy-first — protects GPS, also drops camera EXIF); PUTs variants to ASSETS_BUCKET and original to ORIGINALS_BUCKET; leaves the public original in ASSETS_BUCKET only when the series default allows downloads; stages the updated manifest to `_pending/` in ORIGINALS_BUCKET **after each photo** (a later failure in the same request cannot orphan already-baked objects). Failed bakes delete any objects written for that `slug/id` so a retry is clean. Changes reach GitHub only when the admin "Rebuild" button is pressed (`POST /api/rebuild` → `flushStaging` → one commit → deploy hook).
 
-**Downloadable originals:** the original lives in ORIGINALS_BUCKET. Marking a photo `downloadable` copies it into ASSETS_BUCKET; un-marking deletes the public copy and purges the CDN cache. No Worker sits in the download path — the original is a plain CDN object once public.
+**Downloadable originals:** the original lives in ORIGINALS_BUCKET. Marking a photo `downloadable` copies it into ASSETS_BUCKET; un-marking deletes the public copy and purges the CDN cache. New photos inherit `downloadsDefault` unless explicitly overridden. No Worker sits in the download path — the original is a plain CDN object once public.
 
 ### Text posts
 
@@ -214,6 +217,19 @@ Full markdown body here...
 ```
 
 Staging helpers in `functions/_lib/staging.js`: `getStagedPostSlugs`, `isStagedPostDeleted`.
+
+### Photo pool (`POOL_SLUG = "_pool"`)
+
+A permanent, never-published special series that acts as a staging area for bulk photo drops. Not visible in the public site (always `draft: true`) and excluded from the Series list in the admin.
+
+**Two storage phases:**
+
+- **Raw** (instant on drop, no processing): `ORIGINALS_BUCKET: _pool/raw/<pid>/original.jpg` with `customMetadata { filename, width, height, uploadedAt, status: "raw" }`. `pid` is `crypto.randomUUID()`.
+- **Processed** (after `POST /api/pool/process`): variants live in `ASSETS_BUCKET: _pool/<id>/600.avif` etc., original in `ORIGINALS_BUCKET: _pool/<id>/original.jpg`. `id` is sequential (001, 002, …) via `nextPhotoId()`. Manifest entry in `site/content/projects/_pool/_index.md` staged to `_pending/` — becomes part of GitHub on next Rebuild.
+
+**Move** preflights all variants/original, copies them to the target series key prefix, stages both manifests, then deletes pool objects. No re-processing. Manifests are staged per photo before source deletion so a mid-batch timeout cannot drop a photo from both series and pool.
+
+**Background processing:** `POST /api/pool/process` is the single endpoint for both the "Process pool" button and any external scheduler. It processes up to `limit` (default 6) raw photos per call and returns `{ processed, remaining }`. The pool manifest is staged after each successful bake, *then* the raw object is deleted. The admin loops until `remaining === 0`.
 
 ### Site settings (`site/data/settings.yaml`)
 
@@ -242,6 +258,7 @@ featured: []          # ordered list of { type: "series"|"post"|"photo", slug, l
 | PATCH | `/api/projects/:slug` | Update metadata `{ title, description, cover, draft, downloadsDefault }` |
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
 | POST | `/api/rebuild` | Flush staged changes → GitHub commit + ping Pages deploy hook |
+| GET | `/api/deploy-status` | Latest production Pages deploy `{ configured, live, ok, message, commit }` |
 | GET | `/api/settings` | Read `site/data/settings.yaml` |
 | PATCH | `/api/settings` | Update settings (merges; does not wipe missing keys) |
 | GET | `/api/posts` | List all posts (GitHub + staging, exclude staged-deleted) |
@@ -251,8 +268,15 @@ featured: []          # ordered list of { type: "series"|"post"|"photo", slug, l
 | DELETE | `/api/posts/:slug` | Delete post |
 | POST | `/api/posts/:slug/publish` | Toggle draft `{ draft: bool }` |
 | GET | `/api/version` | Returns `{ version }` from `PACKAGE_VERSION` env var |
+| GET | `/api/staging` | Returns `{ files, deletions }` counts of `_pending/` entries; admin rebuild bar uses this on load |
+| POST | `/api/pool` | Drop raw photos instantly `multipart/form-data photos[]` → ORIGINALS_BUCKET `_pool/raw/<pid>/` — no resize |
+| GET | `/api/pool` | List pool `{ raw: [...], processed: [...] }` — raw from R2 list, processed from pool manifest |
+| POST | `/api/pool/process` | Process raw → variants via Transform via Workers → ASSETS_BUCKET `_pool/<id>/`; accepts `{ limit }` (default 6); returns `{ processed, remaining }` |
+| DELETE | `/api/pool/raw/:pid` | Discard an unprocessed raw drop |
+| DELETE | `/api/pool/:id` | Discard a processed pool photo (all R2 objects + manifest entry) |
+| POST | `/api/projects/:slug/photos/from-pool` | Move processed pool photos into a series `{ ids: [...] }` — copy variants/original (no re-processing), update both manifests |
 
-All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_pending/` (ORIGINALS_BUCKET); `POST /api/rebuild` calls `flushStaging()` then pings the deploy hook.
+All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_pending/` (ORIGINALS_BUCKET); `POST /api/rebuild` calls `flushStaging()` then pings the deploy hook. Pool manifest changes are staged on `process` and `from-pool` — they reach GitHub on the next Rebuild.
 
 ---
 
@@ -312,9 +336,14 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ---
 
-## Current state (last updated: 2026-05-23)
+## Current state (last updated: 2026-09-08)
 
-### v0.1.0 — CURRENT (Basalt fork)
+### v0.2.0 — CURRENT
+- Synced CMS layer from static-photos **v1.6.0**: photo pool, random series slugs, crash-safe publish, admin mobile chrome, env-driven CDN purge (`PUBLIC_ORIGIN`), live Pages deploy-status in the Rebuild bar, GitHub read fallbacks, and settings-write hardening.
+- `DEPLOY_HOOK_URL` is a Pages secret only — do not put it in `wrangler.toml [vars]`.
+- Tailwind content paths now scan `site/themes/basalt/` (was still pointing at `gallery`).
+
+### v0.1.0 (Basalt fork)
 - Forked from static-photos v1.2.3; renamed package and theme to `basalt`
 - Synced from static-photos v1.3.0–v1.3.3 (see below for details)
 - Added static-photos as upstream git remote for CMS layer fixes

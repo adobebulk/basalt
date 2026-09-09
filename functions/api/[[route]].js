@@ -9,8 +9,8 @@
  *   2. For each of 6 variants (600/1200/2400 × avif/jpg): fetch the original URL with
  *      cf.image options (Transform via Workers) → PUT response body to ASSETS_BUCKET
  *   3. If not downloadable: move original to ORIGINALS_BUCKET, delete from ASSETS_BUCKET
- *   4. Append photo entry to _index.md manifest + create <id>.md stub
- *   5. Commit both files to GitHub (single commit via Trees API)
+ *   4. Stage the updated manifest + <id>.md stub immediately (crash-safe; not left until
+ *      the end of a multi-photo request). GitHub is only written on Rebuild.
  *
  * Image transforms use "Transform via Workers" (fetch with cf.image), not the Images
  * binding — the binding is not supported for Pages Functions.
@@ -19,11 +19,11 @@
 
 import yaml from "js-yaml";
 import { getEnv } from "../_lib/env.js";
-import { getFile, listDir, commitFiles } from "../_lib/github.js";
+import { getFile, listDir } from "../_lib/github.js";
 import {
   stageFile, stageDelete, readStaged,
   getStagedSlugs, isStagedDeleted, flushStaging,
-  getStagedPostSlugs, isStagedPostDeleted,
+  getStagedPostSlugs, isStagedPostDeleted, pendingCounts,
 } from "../_lib/staging.js";
 import {
   parseFrontMatter,
@@ -90,6 +90,7 @@ function getImageDimensions(buffer) {
 // ─── Image processing ────────────────────────────────────────────────────────
 
 const SIZES = [600, 1200, 2400];
+const MAX_DIRECT_UPLOAD_FILES = 8;
 const FORMATS = [
   { format: "avif", ext: "avif", contentType: "image/avif" },
   { format: "jpeg", ext: "jpg",  contentType: "image/jpeg" },
@@ -163,22 +164,104 @@ async function generateVariants(slug, id, env) {
  * Falls back to caches.default.delete() for local-datacenter purge only.
  */
 async function purgeCache(env, url) {
+  await purgeCacheFiles(env, [url]);
+}
+
+async function purgeCacheFiles(env, urls) {
+  if (!urls.length) return;
   if (env.cfZoneId && env.cfApiToken) {
-    await fetch(
-      `https://api.cloudflare.com/client/v4/zones/${env.cfZoneId}/purge_cache`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${env.cfApiToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ files: [url] }),
+    const batchSize = 30;
+    for (let i = 0; i < urls.length; i += batchSize) {
+      const body = JSON.stringify({ files: urls.slice(i, i + batchSize) });
+      let lastErr = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        const res = await fetch(
+          `https://api.cloudflare.com/client/v4/zones/${env.cfZoneId}/purge_cache`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${env.cfApiToken}`,
+              "Content-Type": "application/json",
+            },
+            body,
+          }
+        );
+        if (res.ok) { lastErr = null; break; }
+        lastErr = `HTTP ${res.status} ${await res.text()}`;
+        console.error(`[purgeCache] attempt ${attempt + 1} failed: ${lastErr}`);
       }
-    );
+      if (lastErr) console.error(`[purgeCache] giving up on batch ${i}: ${lastErr}`);
+    }
   } else {
-    // Best-effort: only purges in this PoP
-    await caches.default.delete(new Request(url));
+    // Best-effort: only purges in this PoP. Deleted objects can linger on other
+    // edges until TTL if CF_ZONE_ID / CF_API_TOKEN are not configured.
+    console.warn("[purgeCache] CF_ZONE_ID/CF_API_TOKEN unset; purging this PoP only");
+    await Promise.all(urls.map((url) => caches.default.delete(new Request(url))));
   }
+}
+
+const assetUrl = (env, key) => `${env.publicOrigin}/assets/${key}`;
+
+const photoAssetKeys = (slug, id) => [
+  ...SIZES.flatMap((s) => FORMATS.map(({ ext }) => `${slug}/${id}/${s}.${ext}`)),
+  `${slug}/${id}/original.jpg`,
+];
+
+async function purgeAssetKeys(env, keys) {
+  await purgeCacheFiles(env, keys.map((key) => assetUrl(env, key)));
+}
+
+async function cleanupPhotoAssets(env, slug, id) {
+  const keys = photoAssetKeys(slug, id);
+  await Promise.all([
+    env.assetsBucket.delete(keys),
+    env.originalsBucket.delete(`${slug}/${id}/original.jpg`),
+  ]);
+}
+
+/**
+ * Bake one original into private original + 6 public variants.
+ * The original is temporarily public so Transform via Workers can fetch it.
+ * On failure, any objects written for this slug/id are removed so a retry is clean.
+ */
+async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false } = {}) {
+  const originalKey = `${slug}/${id}/original.jpg`;
+  await env.assetsBucket.put(originalKey, originalBuffer, {
+    httpMetadata: { contentType: "image/jpeg" },
+  });
+  try {
+    const variants = await generateVariants(slug, id, env);
+    for (const v of variants) {
+      await env.assetsBucket.put(v.key, v.buffer, {
+        httpMetadata: { contentType: v.contentType },
+      });
+    }
+    await env.originalsBucket.put(originalKey, originalBuffer, {
+      httpMetadata: { contentType: "image/jpeg" },
+    });
+    if (!publicOriginal) {
+      await env.assetsBucket.delete(originalKey);
+    }
+  } catch (e) {
+    console.error(`[bakePhoto] failed ${slug}/${id}:`, e);
+    try {
+      await cleanupPhotoAssets(env, slug, id);
+    } catch (cleanupErr) {
+      console.error(`[bakePhoto] cleanup failed ${slug}/${id}:`, cleanupErr);
+    }
+    throw e;
+  }
+}
+
+async function listAllObjects(bucket, options) {
+  const objects = [];
+  let cursor;
+  do {
+    const page = await bucket.list({ ...options, cursor });
+    objects.push(...page.objects);
+    cursor = page.truncated ? page.cursor : undefined;
+  } while (cursor);
+  return objects;
 }
 
 // ─── GitHub path helpers ─────────────────────────────────────────────────────
@@ -187,6 +270,29 @@ const indexPath = (slug) => `site/content/projects/${slug}/_index.md`;
 const stubPath = (slug, id) => `site/content/projects/${slug}/${id}.md`;
 const postPath = (slug) => `site/content/posts/${slug}/index.md`;
 const settingsPath = "site/data/settings.yaml";
+
+const POOL_SLUG = "_pool";
+const rawPoolKey = (pid) => `_pool/raw/${pid}/original.jpg`;
+
+/**
+ * Generates a random 6-character alphanumeric slug for a new series.
+ * Opaque and permanent — never derived from or changed with the title.
+ */
+function randomSeriesSlug() {
+  const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  return Array.from(crypto.getRandomValues(new Uint8Array(6)))
+    .map(b => chars[b % chars.length]).join('');
+}
+
+async function newSeriesSlug(env) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const slug = randomSeriesSlug();
+    const existing = await readStaged(env.stagingBucket, indexPath(slug), null)
+      ?? await getFile(env.githubToken, env.githubRepo, indexPath(slug));
+    if (!existing) return slug;
+  }
+  throw new Error("unable to allocate unique series slug");
+}
 
 const DEFAULT_SETTINGS = {
   title: "Photos",
@@ -198,14 +304,85 @@ const DEFAULT_SETTINGS = {
   featured: [],
 };
 
+async function listGithubDirs(env, path) {
+  if (!env.githubToken || !env.githubRepo) return [];
+  try {
+    const entries = await listDir(env.githubToken, env.githubRepo, path);
+    return entries ? entries.filter((e) => e.type === "dir").map((e) => e.name) : [];
+  } catch (e) {
+    console.error(`[listGithubDirs] ${path}:`, e);
+    return [];
+  }
+}
+
+async function githubFileFallback(env, path) {
+  if (!env.githubToken || !env.githubRepo) return null;
+  try {
+    return await getFile(env.githubToken, env.githubRepo, path);
+  } catch (e) {
+    console.error(`[githubFileFallback] ${path}:`, e);
+    return null;
+  }
+}
+
+async function githubFileRequired(env, path) {
+  if (!env.githubToken || !env.githubRepo) {
+    throw new Error("GitHub credentials not configured");
+  }
+  return getFile(env.githubToken, env.githubRepo, path);
+}
+
 async function readManifest(env, slug) {
   const result = await readStaged(
     env.stagingBucket,
     indexPath(slug),
-    async (p) => getFile(env.githubToken, env.githubRepo, p)
+    async (p) => githubFileFallback(env, p)
   );
   if (!result) return null;
   return { ...parseFrontMatter(result.content), raw: result.content };
+}
+
+async function readSettings(env, { requireGithub = false } = {}) {
+  const result = await readStaged(
+    env.stagingBucket,
+    settingsPath,
+    // Reads may degrade to defaults, but writes must never treat an unavailable
+    // GitHub baseline as an empty settings file and overwrite real configuration.
+    async (p) => requireGithub
+      ? githubFileRequired(env, p)
+      : githubFileFallback(env, p)
+  );
+  const settings = result ? (yaml.load(result.content) ?? {}) : {};
+  return { ...DEFAULT_SETTINGS, ...settings };
+}
+
+async function stageSettings(env, settings) {
+  await stageFile(env.stagingBucket, settingsPath, yaml.dump(settings, { lineWidth: -1 }));
+}
+
+async function removeDeletedReferences(env, { seriesSlug, photoId, postSlug }) {
+  const settings = await readSettings(env);
+  const before = JSON.stringify(settings);
+
+  if (seriesSlug && photoId && settings.heroPhotoKey === `${seriesSlug}/${photoId}`) {
+    settings.heroPhotoKey = "";
+    settings.heroLink = "";
+  } else if (seriesSlug && !photoId && settings.heroPhotoKey?.startsWith(`${seriesSlug}/`)) {
+    settings.heroPhotoKey = "";
+    settings.heroLink = "";
+  }
+
+  settings.featured = (Array.isArray(settings.featured) ? settings.featured : []).filter((item) => {
+    if (seriesSlug && !photoId && item.type === "series" && item.slug === seriesSlug) return false;
+    if (seriesSlug && !photoId && item.type === "photo" && item.slug === seriesSlug) return false;
+    if (seriesSlug && photoId && item.type === "photo" && item.slug === seriesSlug && item.photoId === photoId) return false;
+    if (postSlug && item.type === "post" && item.slug === postSlug) return false;
+    return true;
+  });
+
+  if (JSON.stringify(settings) !== before) {
+    await stageSettings(env, settings);
+  }
 }
 
 // ─── Router ──────────────────────────────────────────────────────────────────
@@ -224,10 +401,9 @@ export async function onRequest(ctx) {
   try {
     // ── GET /api/projects ────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "projects") {
-      const entries = await listDir(env.githubToken, env.githubRepo, "site/content/projects");
-      const ghSlugs = entries ? entries.filter((e) => e.type === "dir").map((e) => e.name) : [];
+      const ghSlugs = await listGithubDirs(env, "site/content/projects");
       const stagedSlugs = await getStagedSlugs(env.stagingBucket);
-      const allSlugs = [...new Set([...ghSlugs, ...stagedSlugs])];
+      const allSlugs = [...new Set([...ghSlugs, ...stagedSlugs])].filter(s => s !== POOL_SLUG);
 
       const projects = (await Promise.all(
         allSlugs.map(async (slug) => {
@@ -243,6 +419,7 @@ export async function onRequest(ctx) {
             draft:       data.draft       ?? true,
             cover:       data.cover       ?? "",
             photoCount:  (data.photos     ?? []).length,
+            seriesPosts: data.seriesPosts ?? [],
           };
         })
       )).filter(Boolean);
@@ -255,12 +432,7 @@ export async function onRequest(ctx) {
       const { title, description } = await request.json();
       if (!title) return err("title required");
 
-      const slug = slugify(title);
-      // Check staging and GitHub for existing series
-      const stagedExisting = await readStaged(env.stagingBucket, indexPath(slug), null);
-      if (stagedExisting) return err("series already exists", 409);
-      const ghExisting = await getFile(env.githubToken, env.githubRepo, indexPath(slug));
-      if (ghExisting) return err("series already exists", 409);
+      const slug = await newSeriesSlug(env);
 
       const content = newSeriesDoc({ title, description, slug });
       await stageFile(env.stagingBucket, indexPath(slug), content);
@@ -298,61 +470,36 @@ export async function onRequest(ctx) {
       const formData = await request.formData();
       const files = formData.getAll("photos");
       if (!files.length) return err("no photos in request");
+      if (files.length > MAX_DIRECT_UPLOAD_FILES) {
+        return err(`upload at most ${MAX_DIRECT_UPLOAD_FILES} photos per request`, 413);
+      }
 
       const addedPhotos = [];
-      const gitFiles = [];
       let photos = [...(manifest.data.photos ?? [])];
+      const downloadsDefault = manifest.data.downloadsDefault === true;
+      let cover = manifest.data.cover || "";
 
       for (const file of files) {
         const originalBuffer = await file.arrayBuffer();
         const dims = getImageDimensions(originalBuffer) ?? { width: 0, height: 0 };
         const id = nextPhotoId(photos);
         const key = `${slug}/${id}`;
-        const originalKey = `${key}/original.jpg`;
 
-        // 1. PUT original to ASSETS_BUCKET so the transform fetch URL resolves.
-        await env.assetsBucket.put(originalKey, originalBuffer, {
-          httpMetadata: { contentType: "image/jpeg" },
-        });
-        console.log(`[upload] original PUT to ASSETS_BUCKET OK: ${originalKey}`);
+        await bakePhoto(env, slug, id, originalBuffer, { publicOriginal: downloadsDefault });
 
-        // 2. Generate 6 variants via Transform via Workers (fetch with cf.image).
-        //    width/height default to 0 — templates degrade gracefully without them.
-        const variants = await generateVariants(slug, id, env);
-
-        // 3. PUT variants to ASSETS_BUCKET.
-        for (const v of variants) {
-          await env.assetsBucket.put(v.key, v.buffer, {
-            httpMetadata: { contentType: v.contentType },
-          });
-        }
-
-        // 4. If not downloadable: move original to private bucket, remove from public.
-        //    If downloadable: original stays in ASSETS_BUCKET (already public).
-        await env.originalsBucket.put(originalKey, originalBuffer, {
-          httpMetadata: { contentType: "image/jpeg" },
-        });
-        // Default is not downloadable — delete the temporarily-public original.
-        await env.assetsBucket.delete(originalKey);
-
-        const photo = { id, key, width: dims.width, height: dims.height, caption: "", downloadable: false };
+        const photo = { id, key, width: dims.width, height: dims.height, caption: "" };
         photos.push(photo);
         addedPhotos.push(photo);
+        if (!cover) cover = id;
 
-        // Per-photo stub file
-        gitFiles.push({ path: stubPath(slug, id), content: newPhotoStub(id) });
-      }
-
-      // Update manifest: set cover if first photo
-      const updatedData = { ...manifest.data, photos };
-      if (!updatedData.cover && photos.length > 0) {
-        updatedData.cover = photos[0].id;
-      }
-      const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-      gitFiles.push({ path: indexPath(slug), content: updatedManifest });
-
-      for (const { path, content } of gitFiles) {
-        await stageFile(env.stagingBucket, path, content);
+        // Stage immediately so a later photo failing this request cannot orphan
+        // already-baked R2 objects (they would be unlisted and unretryable).
+        const updatedManifest = serializeFrontMatter(
+          { ...manifest.data, photos, cover },
+          manifest.body ?? ""
+        );
+        await stageFile(env.stagingBucket, stubPath(slug, id), newPhotoStub(id));
+        await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
       }
 
       return json({ uploaded: addedPhotos }, 201);
@@ -395,8 +542,7 @@ export async function onRequest(ctx) {
         } else {
           // Delete from public bucket and purge CDN cache
           await env.assetsBucket.delete(originalKey);
-          const publicUrl = `https://photos.ctsmith.org/assets/${originalKey}`;
-          await purgeCache(env, publicUrl);
+          await purgeCache(env, assetUrl(env, originalKey));
         }
         updated.downloadable = body.downloadable;
       }
@@ -441,6 +587,7 @@ export async function onRequest(ctx) {
 
       await env.assetsBucket.delete([...variantKeys, originalKey]);
       await env.originalsBucket.delete(originalKey);
+      await purgeAssetKeys(env, [...variantKeys, originalKey]);
 
       // Remove from manifest
       const updatedData = {
@@ -455,6 +602,7 @@ export async function onRequest(ctx) {
 
       await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
       await stageDelete(env.stagingBucket, stubPath(slug, id));
+      await removeDeletedReferences(env, { seriesSlug: slug, photoId: id });
 
       return json({ deleted: id });
     }
@@ -484,12 +632,14 @@ export async function onRequest(ctx) {
         ];
       });
       await Promise.all(allR2Deletes);
+      await purgeAssetKeys(env, photos.flatMap((photo) => photoAssetKeys(slug, photo.id)));
 
       // Stage deletion of all per-photo stubs and the manifest.
       await Promise.all(photos.map((photo) =>
         stageDelete(env.stagingBucket, stubPath(slug, photo.id))
       ));
       await stageDelete(env.stagingBucket, indexPath(slug));
+      await removeDeletedReferences(env, { seriesSlug: slug });
 
       return json({ deleted: slug });
     }
@@ -506,7 +656,7 @@ export async function onRequest(ctx) {
       const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
-      const updatableFields = ["title", "description", "cover", "draft", "downloadsDefault"];
+      const updatableFields = ["title", "description", "cover", "draft", "downloadsDefault", "seriesPosts"];
       const updatedData = { ...manifest.data };
       for (const f of updatableFields) {
         if (body[f] !== undefined) updatedData[f] = body[f];
@@ -566,6 +716,53 @@ export async function onRequest(ctx) {
       });
     }
 
+    // ── GET /api/deploy-status ───────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "deploy-status") {
+      if (!env.cfApiToken || !env.cfAccountId) {
+        return json({ configured: false });
+      }
+      const project = encodeURIComponent(env.cfPagesProject);
+      const url =
+        `https://api.cloudflare.com/client/v4/accounts/${env.cfAccountId}` +
+        `/pages/projects/${project}/deployments?env=production&per_page=1`;
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${env.cfApiToken}` },
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok || !payload.success) {
+        const msg = payload.errors?.[0]?.message || `Cloudflare API ${res.status}`;
+        return err(msg, 502);
+      }
+      const dep = payload.result?.[0];
+      if (!dep) return json({ configured: true, id: null, live: false, ok: true, message: "No deployments yet" });
+
+      const stage = dep.latest_stage || {};
+      const stageStatus = stage.status || "";
+      const stageName = stage.name || "";
+      const live = stageStatus === "active" || stageName === "queued";
+      const failed = stageStatus === "failure" || stageStatus === "canceled" || dep.is_skipped;
+      const ok = !failed && !live;
+      const short = (dep.deployment_trigger?.metadata?.commit_hash || dep.id || "").slice(0, 7);
+      let message = "Site up to date";
+      if (live) message = stageName ? `Building — ${stageName}` : "Building…";
+      else if (stageStatus === "failure") message = "Build failed";
+      else if (stageStatus === "canceled") message = "Build canceled";
+      else if (dep.is_skipped) message = "Build skipped";
+      else if (short) message = `Live — ${short}`;
+
+      return json({
+        configured: true,
+        id: dep.id,
+        live,
+        ok,
+        status: stageStatus,
+        stage: stageName,
+        commit: short,
+        message,
+        created_on: dep.created_on,
+      });
+    }
+
     // ── POST /api/deploy ─────────────────────────────────────────────────────
     if (method === "POST" && segments.length === 1 && segments[0] === "deploy") {
       if (!env.deployHookUrl) return err("DEPLOY_HOOK_URL not configured", 503);
@@ -581,30 +778,18 @@ export async function onRequest(ctx) {
 
     // ── GET /api/settings ────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "settings") {
-      const result = await readStaged(
-        env.stagingBucket,
-        settingsPath,
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
-      );
-      const settings = result ? (yaml.load(result.content) ?? {}) : {};
-      return json({ ...DEFAULT_SETTINGS, ...settings });
+      return json(await readSettings(env));
     }
 
     // ── PATCH /api/settings ──────────────────────────────────────────────────
     if (method === "PATCH" && segments.length === 1 && segments[0] === "settings") {
       const body = await request.json();
-      const result = await readStaged(
-        env.stagingBucket,
-        settingsPath,
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
-      );
-      const current = result ? (yaml.load(result.content) ?? {}) : {};
       const allowedKeys = ["title", "navLabel", "photographer", "description", "heroPhotoKey", "heroLink", "featured"];
-      const updated = { ...DEFAULT_SETTINGS, ...current };
+      const updated = await readSettings(env, { requireGithub: true });
       for (const k of allowedKeys) {
         if (body[k] !== undefined) updated[k] = body[k];
       }
-      await stageFile(env.stagingBucket, settingsPath, yaml.dump(updated, { lineWidth: -1 }));
+      await stageSettings(env, updated);
       return json(updated);
     }
 
@@ -613,10 +798,15 @@ export async function onRequest(ctx) {
       return json({ version: env.packageVersion ?? "unknown" });
     }
 
+    // ── GET /api/staging ─────────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "staging") {
+      if (!env.stagingBucket) return err("ORIGINALS_BUCKET not configured", 503);
+      return json(await pendingCounts(env.stagingBucket));
+    }
+
     // ── GET /api/posts ────────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "posts") {
-      const entries = await listDir(env.githubToken, env.githubRepo, "site/content/posts");
-      const ghSlugs = entries ? entries.filter((e) => e.type === "dir").map((e) => e.name) : [];
+      const ghSlugs = await listGithubDirs(env, "site/content/posts");
       const stagedSlugs = await getStagedPostSlugs(env.stagingBucket);
       const allSlugs = [...new Set([...ghSlugs, ...stagedSlugs])];
 
@@ -626,7 +816,7 @@ export async function onRequest(ctx) {
           const result = await readStaged(
             env.stagingBucket,
             postPath(slug),
-            async (p) => getFile(env.githubToken, env.githubRepo, p)
+            async (p) => githubFileFallback(env, p)
           );
           if (!result) return null;
           const { data } = parseFrontMatter(result.content);
@@ -674,7 +864,7 @@ export async function onRequest(ctx) {
       const result = await readStaged(
         env.stagingBucket,
         postPath(slug),
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
+        async (p) => githubFileFallback(env, p)
       );
       if (!result) return err("post not found", 404);
       const { data, body: postBody } = parseFrontMatter(result.content);
@@ -690,7 +880,7 @@ export async function onRequest(ctx) {
       const result = await readStaged(
         env.stagingBucket,
         postPath(slug),
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
+        async (p) => githubFileFallback(env, p)
       );
       if (!result) return err("post not found", 404);
       const { data, body: postBody } = parseFrontMatter(result.content);
@@ -713,10 +903,11 @@ export async function onRequest(ctx) {
       const result = await readStaged(
         env.stagingBucket,
         postPath(slug),
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
+        async (p) => githubFileFallback(env, p)
       );
       if (!result) return err("post not found", 404);
       await stageDelete(env.stagingBucket, postPath(slug));
+      await removeDeletedReferences(env, { postSlug: slug });
       return json({ deleted: slug });
     }
 
@@ -733,13 +924,257 @@ export async function onRequest(ctx) {
       const result = await readStaged(
         env.stagingBucket,
         postPath(slug),
-        async (p) => getFile(env.githubToken, env.githubRepo, p)
+        async (p) => githubFileFallback(env, p)
       );
       if (!result) return err("post not found", 404);
       const { data, body: postBody } = parseFrontMatter(result.content);
       const updatedData = { ...data, draft: Boolean(draft) };
       await stageFile(env.stagingBucket, postPath(slug), serializeFrontMatter(updatedData, postBody));
       return json({ slug, draft: Boolean(draft) });
+    }
+
+    // ── POST /api/pool ────────────────────────────────────────────────────────
+    if (method === "POST" && segments.length === 1 && segments[0] === "pool") {
+      if (!env.originalsBucket) return err("ORIGINALS_BUCKET not configured", 503);
+      const formData = await request.formData();
+      const files = formData.getAll("photos");
+      if (!files.length) return err("no photos in request");
+
+      const uploaded = [];
+      for (const file of files) {
+        const buf = await file.arrayBuffer();
+        const dims = getImageDimensions(buf) ?? { width: 0, height: 0 };
+        const pid = crypto.randomUUID();
+        const uploadedAt = new Date().toISOString();
+        await env.originalsBucket.put(rawPoolKey(pid), buf, {
+          httpMetadata: { contentType: "image/jpeg" },
+          customMetadata: {
+            filename: file.name || "photo.jpg",
+            width: String(dims.width),
+            height: String(dims.height),
+            uploadedAt,
+            status: "raw",
+          },
+        });
+        uploaded.push({ pid, filename: file.name || "photo.jpg", width: dims.width, height: dims.height, uploadedAt });
+      }
+      return json({ uploaded }, 201);
+    }
+
+    // ── GET /api/pool ─────────────────────────────────────────────────────────
+    if (method === "GET" && segments.length === 1 && segments[0] === "pool") {
+      const rawObjects = await listAllObjects(env.originalsBucket, { prefix: "_pool/raw/", include: ["customMetadata"] });
+      const raw = rawObjects
+        .filter(obj => obj.key.endsWith("/original.jpg"))
+        .map(obj => {
+          const pid = obj.key.slice("_pool/raw/".length, -"/original.jpg".length);
+          const m = obj.customMetadata ?? {};
+          return {
+            pid,
+            status: "raw",
+            filename: m.filename ?? "photo.jpg",
+            width: parseInt(m.width ?? "0", 10),
+            height: parseInt(m.height ?? "0", 10),
+            uploadedAt: m.uploadedAt ?? "",
+          };
+        })
+        .sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt));
+
+      const poolManifest = await readManifest(env, POOL_SLUG);
+      const processed = (poolManifest?.data?.photos ?? []).map(p => ({
+        id: p.id,
+        key: p.key,
+        status: "processed",
+        caption: p.caption ?? "",
+        width: p.width ?? 0,
+        height: p.height ?? 0,
+      }));
+
+      return json({ raw, processed });
+    }
+
+    // ── POST /api/pool/process ────────────────────────────────────────────────
+    if (method === "POST" && segments.length === 2 && segments[0] === "pool" && segments[1] === "process") {
+      if (!env.assetsBucket) return err("ASSETS_BUCKET not configured", 503);
+      if (!env.originalsBucket) return err("ORIGINALS_BUCKET not configured", 503);
+
+      let reqBody = {};
+      const ct = request.headers.get("content-type") ?? "";
+      if (ct.includes("application/json")) {
+        try { reqBody = await request.json(); } catch (_) {}
+      }
+      const limit = typeof reqBody.limit === "number" ? reqBody.limit : 6;
+
+      // Ensure pool manifest exists (draft: true enforced permanently)
+      let poolManifest = await readManifest(env, POOL_SLUG);
+      if (!poolManifest) {
+        const initData = {
+          title: "Pool",
+          description: "Unassigned uploads",
+          date: new Date().toISOString().split("T")[0],
+          draft: true,
+          cover: "",
+          downloadsDefault: false,
+          photos: [],
+        };
+        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(initData));
+        poolManifest = { data: initData, body: "" };
+      }
+
+      const rawListObjects = await listAllObjects(env.originalsBucket, { prefix: "_pool/raw/", include: ["customMetadata"] });
+      const rawObjects = rawListObjects.filter(obj => obj.key.endsWith("/original.jpg"));
+      const toProcess = rawObjects.slice(0, limit);
+
+      let photos = [...(poolManifest.data.photos ?? [])];
+      let processedCount = 0;
+
+      for (const rawObj of toProcess) {
+        const pid = rawObj.key.slice("_pool/raw/".length, -"/original.jpg".length);
+        const obj = await env.originalsBucket.get(rawPoolKey(pid));
+        if (!obj) continue;
+
+        const buf = await obj.arrayBuffer();
+        const meta = rawObj.customMetadata ?? {};
+        const width = parseInt(meta.width ?? "0", 10);
+        const height = parseInt(meta.height ?? "0", 10);
+
+        const id = nextPhotoId(photos);
+        const key = `${POOL_SLUG}/${id}`;
+
+        await bakePhoto(env, POOL_SLUG, id, buf, { publicOriginal: false });
+
+        const photoEntry = { id, key, width, height, caption: "" };
+        photos.push(photoEntry);
+
+        // Persist the pool manifest before deleting raw. A crash between these
+        // two writes can duplicate the photo on retry; a crash the other way
+        // used to drop it permanently (raw gone, unlisted variants in R2).
+        const updatedPoolData = { ...poolManifest.data, photos, draft: true };
+        await stageFile(env.stagingBucket, stubPath(POOL_SLUG, id), newPhotoStub(id));
+        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
+
+        await env.originalsBucket.delete(rawPoolKey(pid));
+        processedCount++;
+      }
+
+      const remaining = Math.max(0, rawObjects.length - processedCount);
+      return json({ processed: processedCount, remaining });
+    }
+
+    // ── DELETE /api/pool/raw/:pid ─────────────────────────────────────────────
+    if (method === "DELETE" && segments.length === 3 && segments[0] === "pool" && segments[1] === "raw") {
+      const pid = segments[2];
+      await env.originalsBucket.delete(rawPoolKey(pid));
+      return json({ deleted: pid });
+    }
+
+    // ── DELETE /api/pool/:id ──────────────────────────────────────────────────
+    if (method === "DELETE" && segments.length === 2 && segments[0] === "pool") {
+      const id = segments[1];
+      const poolManifest = await readManifest(env, POOL_SLUG);
+      if (!poolManifest) return err("pool not found", 404);
+      const photos = poolManifest.data.photos ?? [];
+      const photo = photos.find(p => p.id === id);
+      if (!photo) return err("photo not found", 404);
+
+      const variantKeys = SIZES.flatMap(s => FORMATS.map(({ ext }) => `${POOL_SLUG}/${id}/${s}.${ext}`));
+      const originalKey = `${POOL_SLUG}/${id}/original.jpg`;
+      await env.assetsBucket.delete([...variantKeys, originalKey]);
+      await env.originalsBucket.delete(originalKey);
+      await purgeAssetKeys(env, [...variantKeys, originalKey]);
+
+      const updatedData = { ...poolManifest.data, photos: photos.filter(p => p.id !== id), draft: true };
+      await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedData, poolManifest.body ?? ""));
+      await stageDelete(env.stagingBucket, stubPath(POOL_SLUG, id));
+
+      return json({ deleted: id });
+    }
+
+    // ── POST /api/projects/:slug/photos/from-pool ─────────────────────────────
+    if (
+      method === "POST" &&
+      segments.length === 4 &&
+      segments[0] === "projects" &&
+      segments[2] === "photos" &&
+      segments[3] === "from-pool"
+    ) {
+      // Client sends batches of ≤5 ids to stay within subrequest budget per call.
+      const slug = segments[1];
+      if (!env.assetsBucket || !env.originalsBucket) return err("R2 not configured", 503);
+
+      const { ids } = await request.json();
+      if (!Array.isArray(ids) || ids.length === 0) return err("ids array required");
+
+      const [targetManifest, poolManifest] = await Promise.all([
+        readManifest(env, slug),
+        readManifest(env, POOL_SLUG),
+      ]);
+      if (!targetManifest) return err("series not found", 404);
+      if (!poolManifest) return json({ moved: [], skipped: ids });
+
+      let targetPhotos = [...(targetManifest.data.photos ?? [])];
+      let poolPhotos = [...(poolManifest.data.photos ?? [])];
+      const downloadsDefault = targetManifest.data.downloadsDefault === true;
+      const moved = [];
+      const skipped = [];
+
+      for (const id of ids) {
+        const poolPhoto = poolPhotos.find(p => p.id === id);
+        if (!poolPhoto) { skipped.push(id); continue; }
+
+        const newId = nextPhotoId(targetPhotos);
+        const newKey = `${slug}/${newId}`;
+        const variantCopies = [];
+
+        // Preflight all source objects before writing or deleting anything.
+        for (const size of SIZES) {
+          for (const { ext, contentType } of FORMATS) {
+            const srcKey = `${POOL_SLUG}/${id}/${size}.${ext}`;
+            const dstKey = `${newKey}/${size}.${ext}`;
+            const obj = await env.assetsBucket.get(srcKey);
+            if (!obj) throw new Error(`Pool photo ${id} is missing ${size}.${ext}`);
+            variantCopies.push({ srcKey, dstKey, obj, contentType });
+          }
+        }
+
+        const srcOrigKey = `${POOL_SLUG}/${id}/original.jpg`;
+        const dstOrigKey = `${newKey}/original.jpg`;
+        const origObj = await env.originalsBucket.get(srcOrigKey);
+        if (!origObj) throw new Error(`Pool photo ${id} is missing original.jpg`);
+        const origBuffer = await origObj.arrayBuffer();
+
+        // Copy all destination objects before touching manifests or sources.
+        for (const { dstKey, obj, contentType } of variantCopies) {
+          await env.assetsBucket.put(dstKey, obj.body, { httpMetadata: { contentType } });
+        }
+        await env.originalsBucket.put(dstOrigKey, origBuffer, { httpMetadata: { contentType: "image/jpeg" } });
+        if (downloadsDefault) {
+          await env.assetsBucket.put(dstOrigKey, origBuffer.slice(0), { httpMetadata: { contentType: "image/jpeg" } });
+        }
+
+        const newPhoto = { id: newId, key: newKey, width: poolPhoto.width, height: poolPhoto.height, caption: poolPhoto.caption || "" };
+        targetPhotos.push(newPhoto);
+        poolPhotos = poolPhotos.filter(p => p.id !== id);
+        moved.push(newPhoto);
+
+        // Stage both manifests before deleting pool sources. A crash after
+        // delete-but-before-stage used to drop the photo from both places.
+        const updatedTargetData = { ...targetManifest.data, photos: targetPhotos };
+        if (!updatedTargetData.cover && targetPhotos.length > 0) {
+          updatedTargetData.cover = targetPhotos[0].id;
+        }
+        const updatedPoolData = { ...poolManifest.data, photos: poolPhotos, draft: true };
+        await stageFile(env.stagingBucket, stubPath(slug, newId), newPhotoStub(newId));
+        await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter(updatedTargetData, targetManifest.body ?? ""));
+        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
+        await stageDelete(env.stagingBucket, stubPath(POOL_SLUG, id));
+
+        await Promise.all(variantCopies.map(({ srcKey }) => env.assetsBucket.delete(srcKey)));
+        await env.originalsBucket.delete(srcOrigKey);
+        await purgeAssetKeys(env, [...variantCopies.map(({ srcKey }) => srcKey), srcOrigKey]);
+      }
+
+      return json({ moved, skipped });
     }
 
     // ── 404 ──────────────────────────────────────────────────────────────────

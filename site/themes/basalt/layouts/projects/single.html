@@ -17,22 +17,24 @@
 
       <a href="{{ $series.RelPermalink }}" class="inline-block mb-4 text-sm text-stone-500 hover:text-stone-900 transition-colors">← {{ $series.Title }}</a>
 
-      <a
-        href="{{ $base }}/{{ .key }}/2400.jpg"
-        data-pswp-src="{{ $base }}/{{ .key }}/2400.jpg"
-        {{ if gt .width 0 }}data-pswp-width="{{ .width }}" data-pswp-height="{{ .height }}"{{ end }}
-        id="permalink-photo"
-        class="block cursor-zoom-in"
-      >
-        <img
-          class="w-full h-auto rounded-sm bg-stone-200"
-          src="{{ $base }}/{{ .key }}/1200.jpg"
-          srcset="{{ $base }}/{{ .key }}/1200.avif 1200w, {{ $base }}/{{ .key }}/2400.avif 2400w"
-          sizes="(min-width:1024px) 1024px, 100vw"
-          width="{{ .width }}" height="{{ .height }}"
-          alt="{{ with .caption }}{{ . }}{{ else }}{{ $series.Title }}{{ end }}"
+      <div id="permalink-gallery">
+        <a
+          href="{{ $base }}/{{ .key }}/2400.jpg"
+          data-pswp-src="{{ $base }}/{{ .key }}/2400.jpg"
+          {{ if gt .width 0 }}data-pswp-width="{{ .width }}" data-pswp-height="{{ .height }}"{{ end }}
+          id="permalink-photo"
+          class="block cursor-zoom-in"
         >
-      </a>
+          <img
+            class="w-full h-auto rounded-sm bg-stone-200"
+            src="{{ $base }}/{{ .key }}/1200.jpg"
+            srcset="{{ $base }}/{{ .key }}/1200.avif 1200w, {{ $base }}/{{ .key }}/2400.avif 2400w"
+            sizes="(min-width:1024px) 1024px, 100vw"
+            width="{{ .width }}" height="{{ .height }}"
+            alt="{{ with .caption }}{{ . }}{{ else }}{{ $series.Title }}{{ end }}"
+          >
+        </a>
+      </div>
 
       <div class="flex items-baseline justify-between gap-4 mt-3">
         <div>
@@ -71,8 +73,8 @@
   <script type="module">
     import PhotoSwipeLightbox from 'https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe-lightbox.esm.js';
     const lightbox = new PhotoSwipeLightbox({
-      gallery: '#permalink-photo',
-      children: 'a#permalink-photo',
+      gallery: '#permalink-gallery',
+      children: 'a',
       pswpModule: () => import('https://cdn.jsdelivr.net/npm/photoswipe@5/dist/photoswipe.esm.js'),
       bgOpacity: 0.96,
       showHideAnimationType: 'fade',

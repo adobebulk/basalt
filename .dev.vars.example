@@ -9,5 +9,9 @@
 # Production bindings are configured in the Cloudflare Pages project during Phase 0.
 
 GITHUB_TOKEN=ghp_your_scoped_token_here
-GITHUB_REPO=adobebulk/static-photos
+GITHUB_REPO=adobebulk/basalt
 DEPLOY_HOOK_URL=https://api.cloudflare.com/client/v4/pages/webhooks/deploy_hooks/your-hook-id
+PUBLIC_ORIGIN=https://example.com
+CF_ACCOUNT_ID=your_cloudflare_account_id
+CF_API_TOKEN=your_pages_read_and_cache_purge_token
+CF_PAGES_PROJECT=basalt

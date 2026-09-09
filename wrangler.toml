@@ -12,15 +12,16 @@ pages_build_output_dir = "site/public"
 [vars]
 HUGO_VERSION = "0.161.1"
 # Keep in sync with package.json version
-PACKAGE_VERSION = "0.1.0"
+PACKAGE_VERSION = "0.2.0"
 GITHUB_REPO = "adobebulk/basalt"
-DEPLOY_HOOK_URL = ""
-ASSETS_R2_PUBLIC_URL = "https://r2.photos.ctsmith.org"
+ASSETS_R2_PUBLIC_URL = "https://r2.example.com"
+PUBLIC_ORIGIN = "https://example.com"
+# DEPLOY_HOOK_URL is a Pages secret — never a wrangler [vars] entry.
 
 [[r2_buckets]]
 binding = "ASSETS_BUCKET"
-bucket_name = "static-photos-assets"
+bucket_name = "basalt-assets"
 
 [[r2_buckets]]
 binding = "ORIGINALS_BUCKET"
-bucket_name = "static-photos-originals"
+bucket_name = "basalt-originals"

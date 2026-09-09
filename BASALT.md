@@ -4,7 +4,7 @@ Basalt is a generic Hugo CMS built on the static-photos infrastructure.
 It supports multiple content types out of the box and is designed to be
 the CMS backbone for any Hugo-based site.
 
-**Version:** 0.1.0  
+**Version:** 0.2.0  
 **Repo:** https://github.com/adobebulk/basalt  
 **Upstream:** static-photos (git remote `static-photos`) — CMS layer fixes are
 periodically cherry-picked from there.
@@ -26,6 +26,7 @@ without removing or renaming existing ones (backward compatibility with static-p
 | Type | API routes | Hugo content path | Notes |
 |---|---|---|---|
 | Photo series | `/api/projects/*` | `site/content/projects/` | Full image pipeline (resize, R2, AVIF/JPEG) |
+| Photo pool | `/api/pool/*` | `site/content/projects/_pool/` | Bulk drop + process; never published |
 | Text posts | `/api/posts/*` | `site/content/posts/` | Pure markdown, no images required |
 
 ### Adding a new content type
@@ -64,7 +65,7 @@ commits from static-photos are photo-specific and should not be pulled.
 
 Source of truth is `package.json`. Keep `wrangler.toml [vars] PACKAGE_VERSION` in sync.
 Minor bump for new content types or features; patch for fixes.
-Current: **0.1.0**
+Current: **0.2.0**
 
 ---
 

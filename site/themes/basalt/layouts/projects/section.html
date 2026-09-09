@@ -44,6 +44,38 @@
       {{- end -}}
     </div>
 
+    {{/* ── Related writing ── */}}
+    {{- with .Params.seriesPosts -}}
+      {{- $hasPosts := false -}}
+      {{- range . -}}
+        {{- $post := site.GetPage (printf "/posts/%s" .slug) -}}
+        {{- if and $post (not $post.Params.draft) -}}{{- $hasPosts = true -}}{{- end -}}
+      {{- end -}}
+      {{- if $hasPosts -}}
+      <div class="px-6 py-8 border-t border-stone-200">
+        <h2 class="text-xs font-semibold tracking-widest uppercase text-stone-400 mb-4">Related writing</h2>
+        <ul class="space-y-4">
+          {{- range . -}}
+            {{- $post := site.GetPage (printf "/posts/%s" .slug) -}}
+            {{- if and $post (not $post.Params.draft) -}}
+            <li>
+              <a href="{{ $post.RelPermalink }}" class="group flex items-baseline gap-3">
+                <span class="text-sm text-stone-700 group-hover:text-stone-900 transition-colors font-medium">
+                  {{- if .label }}{{ .label }}{{ else }}{{ $post.Title }}{{ end -}}
+                </span>
+                <span class="text-xs text-stone-400 tabular-nums whitespace-nowrap">{{ $post.Date.Format "2006-01-02" }}</span>
+                {{- with $post.Params.excerpt -}}
+                <span class="text-xs text-stone-500 hidden sm:inline truncate">{{ . }}</span>
+                {{- end -}}
+              </a>
+            </li>
+            {{- end -}}
+          {{- end -}}
+        </ul>
+      </div>
+      {{- end -}}
+    {{- end -}}
+
     <div class="px-6 py-5 mt-2 border-t border-stone-200">
       <a href="{{ "/" | relURL }}" class="text-sm text-stone-400 hover:text-stone-900 transition-colors">← All projects</a>
     </div>

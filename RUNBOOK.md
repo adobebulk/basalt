@@ -45,8 +45,12 @@ on the **Pages project → Settings → Functions → Bindings & Variables**.
 | `ORIGINALS_BUCKET` | R2 binding | Private bucket — all originals |
 | `IMAGES` | Images (transform) binding | Cloudflare resize binding used in the upload pipeline |
 | `GITHUB_TOKEN` | Secret | Fine-grained PAT, scoped to this repo, Contents: read/write |
-| `GITHUB_REPO` | Plain var | `adobebulk/static-photos` |
-| `DEPLOY_HOOK_URL` | Secret | Cloudflare Pages deploy-hook URL (the admin "Rebuild" target) |
+| `GITHUB_REPO` | Plain var | `adobebulk/basalt` |
+| `DEPLOY_HOOK_URL` | Secret | Cloudflare Pages deploy-hook URL (the admin "Rebuild" target). **Secret only** — do not put it in `wrangler.toml [vars]`. |
+| `PUBLIC_ORIGIN` | Plain var | Public site origin for CDN purge URLs |
+| `CF_ACCOUNT_ID` | Plain var | (optional) account ID for admin build-status |
+| `CF_API_TOKEN` | Secret | (optional) Cache Purge and/or Cloudflare Pages Read |
+| `CF_PAGES_PROJECT` | Plain var | (optional) defaults to `basalt` |
 
 ---
 
@@ -67,6 +71,7 @@ enter it as a binding/secret in step 6.
 
 4. **Create the deploy hook.** Pages → Settings → Builds & deployments → Deploy hooks → create one
    (name it `admin-rebuild`) on the **production** branch → **copy this down** = `DEPLOY_HOOK_URL`.
+   Set it as a Pages **secret**, never as a `wrangler.toml [vars]` entry.
 
 5. **Create the GitHub token.** GitHub → Settings → Developer settings → Fine-grained tokens →
    new token, repository access = `adobebulk/static-photos` only, Repository permissions →

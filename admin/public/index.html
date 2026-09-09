@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover">
   <title>Photo Admin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -32,7 +32,11 @@
     button { font-family: var(--mono); font-size: var(--font-size); cursor: pointer; border: none; background: none; }
 
     /* ── Layout ─────────────────────────────────────────────── */
-    .page { max-width: 860px; margin: 0 auto; padding: 0 16px 80px; }
+    .page { max-width: 860px; margin: 0 auto; padding: 0 16px calc(80px + env(safe-area-inset-bottom, 0px)); }
+    .admin-chrome {
+      position: sticky; top: 0; z-index: 50;
+      background: var(--bg);
+    }
 
     /* ── Header ─────────────────────────────────────────────── */
     .topbar {
@@ -410,13 +414,15 @@
     .rebuild-bar {
       position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
       background: var(--bg); border-top: 1px solid var(--border);
-      padding: 10px 16px;
+      padding: 10px 16px calc(10px + env(safe-area-inset-bottom, 0px));
       display: flex; align-items: center; gap: 12px;
       font-size: 12px; color: var(--muted);
     }
-    .rebuild-bar .status { flex: 1; }
+    .rebuild-bar .status { flex: 1; min-width: 0; }
+    .rebuild-bar-action { display: none; flex-shrink: 0; }
     .dot { width: 7px; height: 7px; border-radius: 50%; background: #c8a000; flex-shrink: 0; }
     .dot.idle { background: var(--green); }
+    .dot.error { background: var(--red); }
     .version-tag { font-size: 10px; opacity: .45; }
 
     /* ── Toast ───────────────────────────────────────────────── */
@@ -426,6 +432,7 @@
       border: 1px solid #333;
       padding: 7px 16px; border-radius: 2px; font-size: 12px;
       opacity: 0; transition: all .2s; pointer-events: none; white-space: nowrap; z-index: 999;
+      max-width: calc(100vw - 32px);
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     #toast.error { background: var(--red); border-color: var(--red); }
@@ -449,31 +456,69 @@
     .post-card-meta { font-size: 11px; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
     .post-card-actions { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; }
 
+    /* ── Pool tiles ──────────────────────────────────────────── */
+    .pool-tile {
+      border: 2px solid var(--border-light);
+      border-radius: 2px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: border-color .1s;
+    }
+    .pool-tile:hover { border-color: var(--border); }
+    .pool-tile-selected { border-color: var(--green) !important; }
+    .pool-tile img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .pool-tile-label { font-size: 10px; color: var(--muted); padding: 3px 6px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pool-tile-actions { display: flex; align-items: center; justify-content: space-between; padding: 2px 6px 4px; }
+    .pool-check { font-size: 14px; color: var(--green); }
+    .pool-tile-raw { cursor: default; background: #f5f5f4; }
+    .pool-tile-raw:hover { border-color: var(--border-light); }
+    .pool-tile-raw-body { padding: 8px 8px 4px; }
+
+    .pool-move-bar {
+      position: fixed; bottom: 52px; left: 0; right: 0; z-index: 99;
+      background: var(--bg); border-top: 2px solid var(--green);
+      padding: 10px 16px; display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; font-size: 12px;
+    }
+    .pool-move-bar.hidden { display: none; }
+    .post-body-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 8px; margin-bottom: 4px; flex-wrap: wrap;
+    }
+    .col-photos-inline { display: none; }
+
     /* ── Mobile overrides ────────────────────────────────────── */
-    @media (max-width: 480px) {
-      .tab-btn { padding: 12px 20px; flex: 1; text-align: center; }
+    @media (max-width: 640px) {
+      .tab-bar { margin-bottom: 16px; }
+      .tab-btn { padding: 12px 8px; flex: 1; text-align: center; }
 
-      /* Topbar: stack brand above buttons */
-      .topbar { flex-direction: column; align-items: flex-start; gap: 8px; padding: 10px 0 8px; }
-      .topbar-left { width: 100%; justify-content: space-between; }
-      .topbar-nav { width: 100%; }
-      .topbar-nav button { flex: 1; text-align: center; font-size: 13px; }
+      /* Topbar: brand row, then full-width verbs */
+      .topbar { flex-direction: column; align-items: stretch; gap: 8px; padding: 10px 0 8px; }
+      .topbar-left { width: 100%; flex-direction: column; align-items: stretch; gap: 8px; }
+      .topbar-nav { width: 100%; display: flex; }
+      .topbar-nav button { flex: 1; text-align: center; font-size: 13px; min-height: 44px; padding: 4px 12px; }
+      #rebuild-label { display: none; } /* status lives in the bottom bar */
+      #btn-rebuild { display: none; }   /* Rebuild sits in the bottom bar on mobile */
+      .rebuild-bar-action { display: flex; align-items: center; justify-content: center; min-height: 44px; }
 
-      /* Hide slug column in series table */
-      .col-slug { display: none; }
+      /* Series table: row is the hit target; drop slug / count / Open */
+      .col-slug, .col-photos, .col-open { display: none; }
+      .col-photos-inline { display: inline; color: var(--muted); font-size: 11px; }
 
-      /* Touch targets: 44px min height */
+      /* Primary verbs stay 44px. Reorder arrows stay compact so photo cards don't balloon. */
       .btn-action, .btn-outline, .btn-danger { min-height: 44px; display: flex; align-items: center; justify-content: center; }
-      .btn-icon { min-height: 44px; min-width: 44px; justify-content: center; display: flex; align-items: center; }
-      .topbar-nav button { min-height: 44px; padding: 4px 12px; }
       .sheet-close { min-height: 44px; padding: 4px 12px; }
+      .esc-hint { display: none; }
+      .photo-card-del { min-height: 44px; min-width: 44px; }
 
       /* Post list */
       .post-card { flex-direction: column; gap: 8px; }
       .post-card-actions { width: 100%; }
       .post-card-actions button { flex: 1; min-height: 44px; }
 
-      /* Photo card body actions */
+      /* Photo cards: caption is the scarce width */
+      .photo-card-main { gap: 6px; padding: 8px 6px; }
+      .photo-card-thumb { width: 56px; height: 56px; }
       .photo-body-actions { gap: 8px; }
       .photo-body-actions button { flex: 1; min-height: 44px; }
 
@@ -485,21 +530,32 @@
       .featured-add-row .feat-label-input { width: 100%; flex: none; }
       .featured-add-row button { min-height: 44px; }
 
-      /* Settings / form */
-      .field input, .field textarea, .field select { font-size: 16px; } /* prevent zoom on iOS */
-
-      /* Post editor body textarea taller on mobile */
+      /* Settings / form — 16px prevents iOS zoom */
+      .field input, .field textarea, .field select { font-size: 16px; }
       #post-body { min-height: 200px; }
+      .post-body-head { flex-direction: column; align-items: stretch; }
+      .post-body-head .btn-outline { min-height: 44px; }
 
-      /* No horizontal overflow */
-      .page { padding-left: 12px; padding-right: 12px; }
+      .page { padding-left: 12px; padding-right: 12px; padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+      .sheet { max-height: 100svh; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
       .sheet-body { padding: 16px; }
+      .sheet-header { padding: 10px 16px; }
+
+      /* Pool move bar sits above the taller rebuild bar */
+      .pool-move-bar {
+        bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+        flex-direction: column; align-items: stretch;
+      }
+      .pool-move-bar select, .pool-move-bar .btn-action { width: 100%; min-height: 44px; }
+
+      #toast { white-space: normal; text-align: center; bottom: calc(64px + env(safe-area-inset-bottom, 0px)); }
     }
   </style>
 </head>
 <body>
 <div class="page">
 
+  <div class="admin-chrome">
   <!-- Header -->
   <div class="topbar">
     <div class="topbar-left">
@@ -507,7 +563,7 @@
       <div class="topbar-nav">
         <button onclick="openSettings()">Settings</button>
         <button id="btn-new" onclick="onNew()">+ New</button>
-        <button id="btn-rebuild" onclick="rebuild()"><span id="rebuild-icon">↻</span> Rebuild</button>
+        <button id="btn-rebuild" data-rebuild-btn onclick="rebuild()"><span data-rebuild-icon>↻</span> Rebuild</button>
       </div>
     </div>
     <span style="font-size:11px;color:var(--muted)" id="rebuild-label">—</span>
@@ -517,6 +573,8 @@
   <div class="tab-bar">
     <button class="tab-btn active" id="tab-btn-series" onclick="switchTab('series')">Series</button>
     <button class="tab-btn" id="tab-btn-posts" onclick="switchTab('posts')">Posts</button>
+    <button class="tab-btn" id="tab-btn-pool" onclick="switchTab('pool')">Pool</button>
+  </div>
   </div>
 
   <!-- Series tab -->
@@ -530,9 +588,9 @@
           <tr>
             <th class="col-slug" style="width:130px">Slug</th>
             <th>Title</th>
-            <th style="width:70px;text-align:right">Photos</th>
+            <th class="col-photos" style="width:70px;text-align:right">Photos</th>
             <th style="width:70px">Status</th>
-            <th style="width:90px"></th>
+            <th class="col-open" style="width:90px"></th>
           </tr>
         </thead>
         <tbody id="project-tbody">
@@ -552,6 +610,34 @@
     </div>
   </div>
 
+  <!-- Pool tab -->
+  <div id="tab-pool" class="hidden">
+    <div class="upload-zone" id="pool-drop-zone"
+         onclick="document.getElementById('pool-file-input').click()"
+         ondragover="dragOver(event,this)" ondragleave="dragLeave(this)" ondrop="dropToPool(event,this)">
+      <strong>Drop photos into the pool</strong>
+      <p>Upload instantly — process and assign to a series later · JPG, PNG, WEBP, AVIF</p>
+      <input type="file" id="pool-file-input" accept="image/*" multiple style="display:none"
+             onchange="uploadToPool(this.files)">
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 0 12px;border-bottom:1px solid var(--border-light)">
+      <button class="btn-action" onclick="processPool()">Process pool →</button>
+      <span id="pool-raw-status" style="font-size:12px;color:var(--muted)"></span>
+      <span id="pool-process-status" style="font-size:12px;color:var(--green)"></span>
+    </div>
+    <div id="pool-grid" style="margin-top:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:8px;"></div>
+    <!-- Sticky move bar: shown when processed pool photos are selected -->
+    <div id="pool-move-bar" class="pool-move-bar hidden">
+      <span id="pool-move-label">0 selected</span>
+      <div style="flex:1"></div>
+      <span style="color:var(--muted)">Move to →</span>
+      <select id="pool-move-target" style="font-family:var(--mono);font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text)">
+        <option value="">Select series…</option>
+      </select>
+      <button class="btn-action" onclick="moveSelectedFromPool()">Move →</button>
+    </div>
+  </div>
+
 </div>
 
 <!-- Rebuild bar -->
@@ -559,6 +645,7 @@
   <div class="dot idle" id="rebuild-dot"></div>
   <span class="status" id="rebuild-status">Site up to date</span>
   <span class="version-tag" id="version-tag"></span>
+  <button class="btn-action rebuild-bar-action" data-rebuild-btn onclick="rebuild()"><span data-rebuild-icon>↻</span> Rebuild</button>
 </div>
 
 <!-- ── New series sheet ──────────────────────────────────────── -->
@@ -566,7 +653,7 @@
   <div class="sheet">
     <div class="sheet-header">
       <span class="sheet-title">New Series</span>
-      <button class="sheet-close" onclick="closeSheet('overlay-new')">close [esc]</button>
+      <button class="sheet-close" onclick="closeSheet('overlay-new')">Close <span class="esc-hint">[esc]</span></button>
     </div>
     <div class="sheet-body">
       <div class="field">
@@ -589,7 +676,7 @@
   <div class="sheet">
     <div class="sheet-header">
       <span class="sheet-title" id="post-sheet-title">New Post</span>
-      <button class="sheet-close" onclick="closeSheet('overlay-post')">close [esc]</button>
+      <button class="sheet-close" onclick="closeSheet('overlay-post')">Close <span class="esc-hint">[esc]</span></button>
     </div>
     <div class="sheet-body">
       <div class="field">
@@ -601,7 +688,7 @@
         <textarea id="post-excerpt" rows="2" style="min-height:50px" placeholder="Short excerpt for cards — leave blank to skip"></textarea>
       </div>
       <div class="field">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <div class="post-body-head">
           <label style="margin-bottom:0">Body (markdown)</label>
           <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker()">⊕ Insert photo</button>
         </div>
@@ -628,7 +715,7 @@
   <div class="sheet">
     <div class="sheet-header">
       <span class="sheet-title">Site Settings</span>
-      <button class="sheet-close" onclick="closeSheet('overlay-settings')">close [esc]</button>
+      <button class="sheet-close" onclick="closeSheet('overlay-settings')">Close <span class="esc-hint">[esc]</span></button>
     </div>
     <div class="sheet-body">
       <div class="field"><label>Site title</label>
@@ -664,12 +751,28 @@
   </div>
 </div>
 
+<!-- ── Pool picker overlay (for "Add from pool" in series detail) ── -->
+<div class="overlay hidden" id="overlay-pool-picker" onclick="closeIfBackdrop(event,'overlay-pool-picker')">
+  <div class="sheet" style="max-height:85svh">
+    <div class="sheet-header">
+      <span class="sheet-title">Add from Pool</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-pool-picker')">Close <span class="esc-hint">[esc]</span></button>
+    </div>
+    <div class="sheet-body">
+      <div id="pool-picker-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:8px;min-height:60px"></div>
+      <div>
+        <button class="btn-action" id="pool-picker-add-btn" onclick="confirmPoolPickerMove()" disabled style="opacity:.4;pointer-events:none">Add to series →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Photo picker overlay ──────────────────────────────────── -->
 <div class="overlay hidden" id="overlay-photo-picker" onclick="closeIfBackdrop(event,'overlay-photo-picker')">
   <div class="sheet" style="max-height:80svh">
     <div class="sheet-header">
       <span class="sheet-title">Insert Photo</span>
-      <button class="sheet-close" onclick="closeSheet('overlay-photo-picker')">close [esc]</button>
+      <button class="sheet-close" onclick="closeSheet('overlay-photo-picker')">Close <span class="esc-hint">[esc]</span></button>
     </div>
     <div class="sheet-body">
       <div class="field">
@@ -703,7 +806,7 @@
   <div class="sheet">
     <div class="sheet-header">
       <span class="sheet-title" id="detail-title">—</span>
-      <button class="sheet-close" onclick="closeSheet('overlay-detail')">close [esc]</button>
+      <button class="sheet-close" onclick="closeSheet('overlay-detail')">Close <span class="esc-hint">[esc]</span></button>
     </div>
     <div class="sheet-body" id="detail-body"></div>
   </div>
@@ -720,10 +823,12 @@ let currentTab    = 'series';
 let editingPost   = null;
 let featuredItems = [];
 let panelSettings = {}; // cached per-panel settings (series detail)
+let sheetStack    = [];
 
 // ── Init ─────────────────────────────────────────────────────────
 loadProjects();
-setRebuildStatus('idle', 'Site up to date');
+refreshStagingStatus();
+syncDeployStatus();
 loadVersion();
 
 async function loadVersion() {
@@ -739,10 +844,17 @@ function switchTab(tab) {
   currentTab = tab;
   document.getElementById('tab-series').classList.toggle('hidden', tab !== 'series');
   document.getElementById('tab-posts').classList.toggle('hidden', tab !== 'posts');
+  document.getElementById('tab-pool').classList.toggle('hidden', tab !== 'pool');
   document.getElementById('tab-btn-series').classList.toggle('active', tab === 'series');
   document.getElementById('tab-btn-posts').classList.toggle('active', tab === 'posts');
-  document.getElementById('btn-new').textContent = tab === 'series' ? '+ New Series' : '+ New Post';
+  document.getElementById('tab-btn-pool').classList.toggle('active', tab === 'pool');
+  const newBtn = document.getElementById('btn-new');
+  newBtn.style.display = tab === 'pool' ? 'none' : '';
+  newBtn.textContent = tab === 'series' ? '+ New Series' : '+ New Post';
+  // Hide pool move bar when leaving pool tab
+  if (tab !== 'pool') document.getElementById('pool-move-bar').classList.add('hidden');
   if (tab === 'posts') loadPostsList();
+  if (tab === 'pool') loadPool();
 }
 
 function onNew() {
@@ -756,8 +868,13 @@ async function api(method, path, body, isForm) {
   if (body && !isForm) { opts.headers = { 'Content-Type': 'application/json' }; opts.body = JSON.stringify(body); }
   else if (isForm) { opts.body = body; }
   const res = await fetch('/api' + path, opts);
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'Request failed');
+  const text = await res.text();
+  let json = {};
+  if (text) {
+    try { json = JSON.parse(text); }
+    catch { throw new Error(res.ok ? 'Invalid response' : `Request failed (${res.status})`); }
+  }
+  if (!res.ok) throw new Error(json.error || `Request failed (${res.status})`);
   return json;
 }
 
@@ -790,10 +907,10 @@ function renderTable() {
   tbody.innerHTML = projects.map(p => `
     <tr onclick="openDetail('${p.slug}')">
       <td class="col-slug"><span class="slug-badge">${esc(p.slug)}</span></td>
-      <td>${esc(p.title)}</td>
-      <td style="text-align:right;color:var(--muted)">${p.photoCount}</td>
+      <td>${esc(p.title)}<span class="col-photos-inline"> · ${p.photoCount}</span></td>
+      <td class="col-photos" style="text-align:right;color:var(--muted)">${p.photoCount}</td>
       <td><span class="badge ${p.draft ? 'badge-draft' : 'badge-live'}">${p.draft ? 'Draft' : 'Live'}</span></td>
-      <td style="text-align:right"><button class="btn-action" onclick="openDetail('${p.slug}');event.stopPropagation()">Open →</button></td>
+      <td class="col-open" style="text-align:right"><button class="btn-action" onclick="openDetail('${p.slug}');event.stopPropagation()">Open →</button></td>
     </tr>
   `).join('');
 }
@@ -813,7 +930,7 @@ async function createProject() {
     await api('POST', '/projects', { title, description: document.getElementById('new-desc').value.trim() });
     closeSheet('overlay-new');
     await loadProjects();
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(`"${title}" created`);
   } catch(e) { toast(e.message, true); }
 }
@@ -831,6 +948,29 @@ async function openDetail(slug) {
   ]);
   panelSettings = settings || {};
   renderDetail(p, photos, panelSettings);
+
+  // Async: update "N in pool" badge (non-fatal)
+  api('GET', '/pool').then(data => {
+    const el = document.getElementById(`from-pool-count-${slug}`);
+    if (el && data.processed.length) el.textContent = `${data.processed.length} in pool`;
+  }).catch(() => {});
+
+  // Populate the "Attach a post" dropdown (non-fatal)
+  try {
+    const allPosts = await api('GET', '/posts');
+    const select = document.getElementById(`series-post-select-${slug}`);
+    if (select) {
+      const attached = (p.seriesPosts || []).map(sp => sp.slug);
+      allPosts
+        .filter(post => !post.draft && !attached.includes(post.slug))
+        .forEach(post => {
+          const opt = document.createElement('option');
+          opt.value = post.slug;
+          opt.textContent = post.title || post.slug;
+          select.appendChild(opt);
+        });
+    }
+  } catch(_) {}
 }
 
 function renderDetail(p, photos, settings) {
@@ -877,6 +1017,12 @@ function renderDetail(p, photos, settings) {
              onchange="uploadFiles(this.files,'${p.slug}')">
     </div>
 
+    <!-- Add from pool shortcut -->
+    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+      <button class="btn-outline" onclick="openPoolPicker('${p.slug}')">Add from pool →</button>
+      <span id="from-pool-count-${p.slug}" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+
     <!-- Metadata -->
     <div style="display:flex;flex-direction:column;gap:12px">
       <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Details</div>
@@ -896,6 +1042,20 @@ function renderDetail(p, photos, settings) {
         <button class="btn-outline" onclick="setHero('${p.slug}')">Set as hero</button>
         ${thisSeriesIsHero ? `<button class="btn-outline" style="color:var(--muted)" onclick="clearHero()">Clear hero</button>` : ''}
         ${currentHeroKey && !thisSeriesIsHero ? `<span style="font-size:11px;color:var(--muted)">Current hero: ${esc(currentHeroKey)}</span>` : ''}
+      </div>
+    </div>
+
+    <!-- Related posts -->
+    <div style="display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--border-light)">
+      <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Related writing</div>
+      <div id="series-posts-list-${p.slug}" style="display:flex;flex-direction:column;gap:6px">
+        ${renderSeriesPostsList(p.slug, p.seriesPosts || [])}
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
+        <select id="series-post-select-${p.slug}" style="font-family:var(--mono);font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);flex:1;min-width:0">
+          <option value="">Attach a post…</option>
+        </select>
+        <button class="btn-outline" onclick="attachPostToSeries('${p.slug}')">Attach →</button>
       </div>
     </div>
 
@@ -975,7 +1135,7 @@ async function setHero(slug) {
   try {
     await api('PATCH', '/settings', { heroPhotoKey: key, heroLink: `/projects/${slug}/` });
     toast('Homepage hero updated — rebuild to publish');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
@@ -983,7 +1143,7 @@ async function clearHero() {
   try {
     await api('PATCH', '/settings', { heroPhotoKey: '', heroLink: '' });
     toast('Hero cleared — rebuild to publish');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
@@ -1000,7 +1160,7 @@ async function featurePhoto(slug, id) {
     const el = document.getElementById(`feat-btn-${slug}-${id}`);
     if (el) el.innerHTML = featureBtnHTML(slug, id);
     toast('Added to featured — rebuild to publish');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
@@ -1013,7 +1173,68 @@ async function unfeaturePhoto(slug, id) {
     const el = document.getElementById(`feat-btn-${slug}-${id}`);
     if (el) el.innerHTML = featureBtnHTML(slug, id);
     toast('Removed from featured — rebuild to publish');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+// ── Series-attached posts ─────────────────────────────────────────
+function renderSeriesPostsList(seriesSlug, seriesPosts) {
+  if (!seriesPosts.length) {
+    return '<span style="font-size:12px;color:var(--muted)">No posts attached yet.</span>';
+  }
+  return seriesPosts.map(sp => `
+    <div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border:1px solid var(--border-light);border-radius:2px;font-size:12px">
+      <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:var(--mono)">${esc(sp.slug)}</span>
+      ${sp.label ? `<span style="color:var(--muted)">${esc(sp.label)}</span>` : ''}
+      <button class="btn-icon" style="font-size:11px;color:var(--red)" onclick="detachPostFromSeries('${esc(seriesSlug)}','${esc(sp.slug)}')">✕</button>
+    </div>
+  `).join('');
+}
+
+async function attachPostToSeries(seriesSlug) {
+  const select = document.getElementById(`series-post-select-${seriesSlug}`);
+  const postSlug = select.value;
+  if (!postSlug) { toast('Select a post first', true); return; }
+
+  const p = projects.find(x => x.slug === seriesSlug);
+  if (!p) return;
+  const current = Array.isArray(p.seriesPosts) ? p.seriesPosts : [];
+  if (current.some(sp => sp.slug === postSlug)) { toast('Already attached'); return; }
+
+  const updated = [...current, { slug: postSlug, label: '' }];
+  try {
+    await api('PATCH', `/projects/${seriesSlug}`, { seriesPosts: updated });
+    p.seriesPosts = updated;
+    document.getElementById(`series-posts-list-${seriesSlug}`).innerHTML =
+      renderSeriesPostsList(seriesSlug, updated);
+    // Remove attached post from dropdown
+    const opt = select.querySelector(`option[value="${postSlug}"]`);
+    if (opt) opt.remove();
+    select.value = '';
+    await refreshStagingStatus();
+    toast('Post attached — rebuild to publish');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function detachPostFromSeries(seriesSlug, postSlug) {
+  const p = projects.find(x => x.slug === seriesSlug);
+  if (!p) return;
+  const updated = (p.seriesPosts || []).filter(sp => sp.slug !== postSlug);
+  try {
+    await api('PATCH', `/projects/${seriesSlug}`, { seriesPosts: updated });
+    p.seriesPosts = updated;
+    document.getElementById(`series-posts-list-${seriesSlug}`).innerHTML =
+      renderSeriesPostsList(seriesSlug, updated);
+    // Add the post back to the dropdown
+    const select = document.getElementById(`series-post-select-${seriesSlug}`);
+    if (select) {
+      const opt = document.createElement('option');
+      opt.value = postSlug;
+      opt.textContent = postSlug;
+      select.appendChild(opt);
+    }
+    await refreshStagingStatus();
+    toast('Post detached — rebuild to publish');
   } catch(e) { toast('Failed: ' + e.message, true); }
 }
 
@@ -1033,7 +1254,7 @@ async function movePhoto(slug, id, direction) {
 
   try {
     await api('PATCH', `/projects/${slug}`, { photoOrder });
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     const list = document.getElementById(`photo-list-${slug}`);
     if (list) list.innerHTML = photos.map((f, i) => photoCardHTML(slug, f, i, photos.length)).join('');
     toast('Order saved');
@@ -1045,7 +1266,7 @@ async function saveCaption(slug, id, input) {
   const caption = input.value.trim();
   try {
     await api('PATCH', `/projects/${slug}/photos/${id}`, { caption });
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Caption saved');
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
@@ -1055,7 +1276,7 @@ async function saveBody(slug, id, btn) {
   const body = editor.querySelector('textarea').value;
   try {
     await api('PATCH', `/projects/${slug}/photos/${id}`, { body });
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Note saved');
     const toggle = editor.closest('.photo-card').querySelector('.photo-body-toggle');
     toggle.textContent = '▾ Edit note';
@@ -1067,7 +1288,7 @@ async function clearBody(slug, id, btn) {
   if (!confirm('Remove this note?')) return;
   try {
     await api('PATCH', `/projects/${slug}/photos/${id}`, { body: '' });
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Note removed');
     const toggle = editor.closest('.photo-card').querySelector('.photo-body-toggle');
     toggle.textContent = '▸ Add note';
@@ -1083,7 +1304,7 @@ async function deletePhoto(slug, id, e) {
   try {
     await api('DELETE', `/projects/${slug}/photos/${id}`);
     document.getElementById(`pcard-${slug}-${id}`)?.remove();
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Deleted ' + id);
   } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
@@ -1144,7 +1365,7 @@ async function uploadFiles(files, slug) {
   if (failed === 0) toast(`Uploaded ${succeeded} photo${succeeded !== 1 ? 's' : ''}`);
   else toast(`${succeeded} uploaded, ${failed} failed`, failed > 0);
 
-  setRebuildStatus('dirty', 'Rebuild needed');
+  await refreshStagingStatus();
   const p = projects.find(x => x.slug === slug);
   const [photos, settings] = await Promise.all([
     api('GET', `/projects/${slug}/photos`).catch(() => []),
@@ -1164,7 +1385,7 @@ async function saveMetadata(slug) {
   try {
     await api('PATCH', `/projects/${slug}`, { title, description });
     await loadProjects();
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Saved');
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
@@ -1174,7 +1395,7 @@ async function togglePublish(slug, isDraft) {
     await api('POST', `/projects/${slug}/publish`, { draft: !isDraft });
     await loadProjects();
     closeSheet('overlay-detail');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(isDraft ? 'Published' : 'Moved to draft');
   } catch(e) { toast('Failed to update status: ' + e.message, true); }
 }
@@ -1185,7 +1406,7 @@ async function deleteSeries(slug) {
     await api('DELETE', `/projects/${slug}`);
     closeSheet('overlay-detail');
     await loadProjects();
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(`Deleted series '${slug}'`);
   } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
@@ -1230,7 +1451,7 @@ function renderPostsList() {
       <div class="post-card-actions">
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPost('${esc(p.slug)}')">Edit</button>
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePostPublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
-        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePost('${esc(p.slug)}','${esc(p.title)}')">Del</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePost(${jsString(p.slug)},${jsString(p.title)})">Del</button>
       </div>
     </div>
   `).join('');
@@ -1308,7 +1529,7 @@ async function savePost() {
       } catch(_) {}
     }
     closeSheet('overlay-post');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     await loadPostsList();
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
@@ -1316,7 +1537,7 @@ async function savePost() {
 async function togglePostPublish(slug, isDraft) {
   try {
     await api('POST', `/posts/${slug}/publish`, { draft: !isDraft });
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(isDraft ? 'Post published' : 'Post moved to draft');
     await loadPostsList();
   } catch(e) { toast('Failed: ' + e.message, true); }
@@ -1326,7 +1547,7 @@ async function confirmDeletePost(slug, title) {
   if (!confirm(`Delete post "${title}"? This cannot be undone.`)) return;
   try {
     await api('DELETE', `/posts/${slug}`);
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(`Deleted "${title}"`);
     await loadPostsList();
   } catch(e) { toast('Delete failed: ' + e.message, true); }
@@ -1339,7 +1560,7 @@ async function deletePost() {
   try {
     await api('DELETE', `/posts/${editingPost}`);
     closeSheet('overlay-post');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast(`Deleted "${title}"`);
     await loadPostsList();
   } catch(e) { toast('Delete failed: ' + e.message, true); }
@@ -1355,9 +1576,13 @@ async function openPhotoPicker() {
 
   const select = document.getElementById('picker-series-select');
   select.innerHTML = '<option value="">Select series…</option>';
+  const poolOpt = document.createElement('option');
+  poolOpt.value = '_pool';
+  poolOpt.textContent = 'Pool';
+  select.appendChild(poolOpt);
   try {
     const projs = await api('GET', '/projects');
-    projs.forEach(p => {
+    projs.filter(p => p.slug !== '_pool').forEach(p => {
       const opt = document.createElement('option');
       opt.value = p.slug;
       opt.textContent = p.title || p.slug;
@@ -1379,8 +1604,18 @@ async function loadPickerPhotos() {
   if (!slug) { grid.innerHTML = ''; return; }
   grid.innerHTML = '<span style="font-size:12px;color:var(--muted)">Loading…</span>';
   try {
-    const photos = await api('GET', `/projects/${slug}/photos`);
+    let photos;
+    if (slug === '_pool') {
+      const data = await api('GET', '/pool');
+      photos = data.processed || [];
+    } else {
+      photos = await api('GET', `/projects/${slug}/photos`);
+    }
     grid.innerHTML = '';
+    if (!photos.length) {
+      grid.innerHTML = '<span style="font-size:12px;color:var(--muted)">No photos in this source.</span>';
+      return;
+    }
     photos.forEach(p => {
       const img = document.createElement('img');
       img.src = `/assets/${p.key}/600.jpg`;
@@ -1424,26 +1659,107 @@ function insertPhotoMarkdown() {
 
 // ── Rebuild ───────────────────────────────────────────────────────
 function setRebuildStatus(state, msg) {
-  document.getElementById('rebuild-dot').className = 'dot' + (state === 'idle' ? ' idle' : '');
+  const cls = state === 'idle' ? ' idle' : state === 'error' ? ' error' : '';
+  document.getElementById('rebuild-dot').className = 'dot' + cls;
   document.getElementById('rebuild-status').textContent = msg;
   document.getElementById('rebuild-label').textContent = msg;
 }
 
-async function rebuild() {
-  const icon = document.getElementById('rebuild-icon');
-  icon.className = 'spin'; icon.textContent = '↻';
-  document.getElementById('btn-rebuild').disabled = true;
-  setRebuildStatus('building', 'Triggering build…');
+let deployWatch = null;
+
+function stopDeployWatch() {
+  if (deployWatch) { clearInterval(deployWatch); deployWatch = null; }
+}
+
+async function fetchDeployStatus() {
   try {
+    return await api('GET', '/deploy-status');
+  } catch (_) {
+    return null;
+  }
+}
+
+async function refreshStagingStatus() {
+  if (deployWatch) return;
+  try {
+    const s = await api('GET', '/staging');
+    const n = (s.files || 0) + (s.deletions || 0);
+    if (n > 0) {
+      setRebuildStatus('dirty', n === 1
+        ? 'Rebuild needed — 1 pending change'
+        : `Rebuild needed — ${n} pending changes`);
+    } else {
+      setRebuildStatus('idle', 'Site up to date');
+    }
+  } catch (_) {
+    // Leave whatever status is currently shown.
+  }
+}
+
+async function syncDeployStatus() {
+  const s = await fetchDeployStatus();
+  if (!s || !s.configured) return;
+  if (s.live) startDeployWatch({ followCurrent: true, beforeId: s.id });
+}
+
+function startDeployWatch({ beforeId = null, followCurrent = false } = {}) {
+  stopDeployWatch();
+  const started = Date.now();
+  const tick = async () => {
+    const s = await fetchDeployStatus();
+    if (!s || !s.configured) {
+      stopDeployWatch();
+      if (!followCurrent) setRebuildStatus('idle', 'Build triggered ✓');
+      return;
+    }
+    const tracking = followCurrent || (s.id && s.id !== beforeId);
+    if (Date.now() - started > 180000) {
+      stopDeployWatch();
+      setRebuildStatus('error', 'Build is taking longer than expected — check Pages');
+      return;
+    }
+    if (tracking && s.live) {
+      setRebuildStatus('building', s.message);
+      return;
+    }
+    if (tracking && !s.live) {
+      stopDeployWatch();
+      if (s.ok) {
+        setRebuildStatus('idle', s.message);
+        if (!followCurrent) toast('Build live');
+        await refreshStagingStatus();
+      } else {
+        setRebuildStatus('error', s.message);
+        toast(s.message, true);
+      }
+      return;
+    }
+    if (!followCurrent) setRebuildStatus('building', 'Waiting for Cloudflare build…');
+  };
+  tick();
+  deployWatch = setInterval(tick, 3000);
+}
+
+async function rebuild() {
+  const btns = document.querySelectorAll('[data-rebuild-btn]');
+  const icons = document.querySelectorAll('[data-rebuild-icon]');
+  btns.forEach(b => { b.disabled = true; });
+  icons.forEach(i => { i.className = 'spin'; i.textContent = '↻'; });
+  setRebuildStatus('building', 'Triggering build…');
+  let beforeId = null;
+  try {
+    const before = await fetchDeployStatus();
+    if (before && before.configured) beforeId = before.id || null;
     await api('POST', '/rebuild');
-    setRebuildStatus('idle', 'Build triggered ✓');
-    toast('Build triggered — check Cloudflare Pages for progress');
+    toast('Build triggered');
+    startDeployWatch({ beforeId });
   } catch(e) {
+    stopDeployWatch();
     setRebuildStatus('error', 'Failed to trigger build');
     toast('Failed to trigger build: ' + e.message, true);
   }
-  icon.className = ''; icon.textContent = '↻';
-  document.getElementById('btn-rebuild').disabled = false;
+  icons.forEach(i => { i.className = ''; i.textContent = '↻'; });
+  btns.forEach(b => { b.disabled = false; });
 }
 
 // ── Settings ──────────────────────────────────────────────────────
@@ -1532,25 +1848,352 @@ async function saveSettings() {
   try {
     await api('PATCH', '/settings', body);
     closeSheet('overlay-settings');
-    setRebuildStatus('dirty', 'Rebuild needed');
+    await refreshStagingStatus();
     toast('Settings saved — rebuild to publish');
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
 // ── Sheet helpers ─────────────────────────────────────────────────
-function openSheet(id) { document.getElementById(id).classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
-function closeSheet(id) { document.getElementById(id).classList.add('hidden'); document.body.style.overflow = ''; }
+function openSheet(id) {
+  const el = document.getElementById(id);
+  el.classList.remove('hidden');
+  if (!sheetStack.includes(id)) sheetStack.push(id);
+  el.style.zIndex = String(200 + sheetStack.length);
+  document.body.style.overflow = 'hidden';
+}
+function closeSheet(id) {
+  const el = document.getElementById(id);
+  el.classList.add('hidden');
+  el.style.zIndex = '';
+  sheetStack = sheetStack.filter(x => x !== id);
+  if (!sheetStack.length) document.body.style.overflow = '';
+}
 function closeIfBackdrop(e, id) { if (e.target === document.getElementById(id)) closeSheet(id); }
 
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
-  ['overlay-detail','overlay-new','overlay-settings','overlay-post','overlay-photo-picker'].forEach(id => {
-    if (!document.getElementById(id).classList.contains('hidden')) closeSheet(id);
-  });
+  if (!sheetStack.length) return;
+  closeSheet(sheetStack[sheetStack.length - 1]);
 });
+
+// ── Pool tab ──────────────────────────────────────────────────────
+let poolData = { raw: [], processed: [] };
+let poolSelectedIds = new Set();
+
+async function loadPool() {
+  document.getElementById('pool-grid').innerHTML =
+    `<div class="empty" style="grid-column:1/-1;border:1px solid var(--border-light)">Loading…</div>`;
+  try {
+    poolData = await api('GET', '/pool');
+    renderPoolGrid();
+    updatePoolRawStatus();
+    poolSelectedIds = new Set();
+    updatePoolMoveBar();
+  } catch(e) {
+    document.getElementById('pool-grid').innerHTML =
+      `<div class="empty" style="grid-column:1/-1;border:1px solid var(--border-light)">Failed to load — ${esc(e.message)}</div>`;
+  }
+}
+
+function updatePoolRawStatus() {
+  const el = document.getElementById('pool-raw-status');
+  if (!el) return;
+  const n = poolData.raw.length;
+  el.textContent = n === 0 ? 'No raw photos waiting' : `${n} raw photo${n !== 1 ? 's' : ''} waiting`;
+}
+
+function renderPoolGrid() {
+  const grid = document.getElementById('pool-grid');
+  if (!grid) return;
+  const { raw, processed } = poolData;
+  if (!raw.length && !processed.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1;border:1px solid var(--border-light)">Pool is empty — drop photos above to get started.</div>`;
+    return;
+  }
+  grid.innerHTML = [
+    ...processed.map(p => `
+      <div class="pool-tile${poolSelectedIds.has(p.id) ? ' pool-tile-selected' : ''}" id="pool-tile-${esc(p.id)}" onclick="togglePoolSelect('${esc(p.id)}',this)">
+        <img src="/assets/${esc(p.key)}/600.jpg" loading="lazy" onerror="this.style.display='none'">
+        <div class="pool-tile-label">${esc(p.caption || p.id)}</div>
+        <div class="pool-tile-actions">
+          <span class="pool-check" id="pool-check-${esc(p.id)}">${poolSelectedIds.has(p.id) ? '☑' : '☐'}</span>
+          <button class="btn-icon" style="font-size:10px;color:var(--red)" onclick="event.stopPropagation();discardPoolPhoto('${esc(p.id)}')">✕</button>
+        </div>
+      </div>
+    `),
+    ...raw.map(r => `
+      <div class="pool-tile pool-tile-raw">
+        <div class="pool-tile-raw-body">
+          <div style="font-size:11px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.filename)}</div>
+          <div style="font-size:10px;color:var(--muted);margin-top:2px">${r.width && r.height ? r.width+'×'+r.height : '—'}</div>
+          <div style="font-size:10px;color:var(--muted)">${r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString() : ''}</div>
+        </div>
+        <div style="padding:0 8px 8px">
+          <button class="btn-icon" style="font-size:10px;color:var(--red);width:100%" onclick="discardRawPool('${esc(r.pid)}')">Discard</button>
+        </div>
+      </div>
+    `),
+  ].join('');
+}
+
+function togglePoolSelect(id, el) {
+  if (poolSelectedIds.has(id)) {
+    poolSelectedIds.delete(id);
+    el.classList.remove('pool-tile-selected');
+    const ck = document.getElementById(`pool-check-${id}`);
+    if (ck) ck.textContent = '☐';
+  } else {
+    poolSelectedIds.add(id);
+    el.classList.add('pool-tile-selected');
+    const ck = document.getElementById(`pool-check-${id}`);
+    if (ck) ck.textContent = '☑';
+  }
+  updatePoolMoveBar();
+}
+
+function updatePoolMoveBar() {
+  const bar = document.getElementById('pool-move-bar');
+  if (!bar) return;
+  const n = poolSelectedIds.size;
+  bar.classList.toggle('hidden', n === 0);
+  const lbl = document.getElementById('pool-move-label');
+  if (lbl) lbl.textContent = `${n} selected`;
+
+  const sel = document.getElementById('pool-move-target');
+  if (sel && !sel.dataset.populated) {
+    sel.innerHTML = '<option value="">Select series…</option>';
+    projects.filter(p => p.slug !== '_pool').forEach(p => {
+      const opt = document.createElement('option');
+      opt.value = p.slug;
+      opt.textContent = p.title || p.slug;
+      sel.appendChild(opt);
+    });
+    sel.dataset.populated = '1';
+  }
+}
+
+async function moveSelectedFromPool() {
+  const ids = [...poolSelectedIds];
+  if (!ids.length) return;
+  const slug = document.getElementById('pool-move-target').value;
+  if (!slug) { toast('Select a series first', true); return; }
+
+  const BATCH = 5;
+  let totalMoved = 0;
+  for (let i = 0; i < ids.length; i += BATCH) {
+    try {
+      const res = await api('POST', `/projects/${slug}/photos/from-pool`, { ids: ids.slice(i, i + BATCH) });
+      totalMoved += (res.moved || []).length;
+    } catch(e) { toast('Move failed: ' + e.message, true); break; }
+  }
+
+  if (totalMoved > 0) {
+    toast(`Moved ${totalMoved} photo${totalMoved !== 1 ? 's' : ''} to ${slug}`);
+    await refreshStagingStatus();
+    poolSelectedIds.clear();
+    const sel = document.getElementById('pool-move-target');
+    if (sel) delete sel.dataset.populated;
+    await loadPool();
+  }
+}
+
+async function uploadToPool(files) {
+  if (!files.length) return;
+  const zone = document.getElementById('pool-drop-zone');
+  const total = files.length;
+  let succeeded = 0, failed = 0;
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    zone.innerHTML = `<strong><span class="spin">↻</span> Uploading ${i + 1} of ${total}…</strong><p>Photos will appear below once uploaded</p>`;
+    let ready;
+    try { ready = await resizeForUpload(file); }
+    catch(e) { failed++; toast(`Skipped ${file.name}: ${e.message}`, true); continue; }
+
+    const fd = new FormData();
+    fd.append('photos', ready);
+    try { await api('POST', '/pool', fd, true); succeeded++; }
+    catch(e) { failed++; toast(`Failed ${file.name}: ${e.message}`, true); }
+  }
+
+  zone.innerHTML = `<strong>Drop photos into the pool</strong><p>Upload instantly — process and assign to a series later · JPG, PNG, WEBP, AVIF</p>`;
+  if (failed === 0) toast(`${succeeded} photo${succeeded !== 1 ? 's' : ''} added to pool`);
+  else toast(`${succeeded} added, ${failed} failed`, failed > 0);
+  await loadPool();
+}
+
+function dropToPool(event, el) {
+  event.preventDefault();
+  el.classList.remove('drag');
+  uploadToPool(event.dataTransfer.files);
+}
+
+async function processPool() {
+  const statusEl = document.getElementById('pool-process-status');
+  const rawStatusEl = document.getElementById('pool-raw-status');
+  const btn = document.querySelector('#tab-pool .btn-action');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Processing…'; }
+
+  let totalProcessed = 0;
+  let remaining = Infinity;
+  let loops = 0;
+
+  try {
+    while (remaining > 0 && loops < 20) {
+      const res = await api('POST', '/pool/process');
+      totalProcessed += res.processed || 0;
+      remaining = res.remaining ?? 0;
+      loops++;
+      if (statusEl) statusEl.textContent = remaining > 0
+        ? `Processed ${totalProcessed}, ${remaining} remaining…`
+        : `Processed ${totalProcessed} photo${totalProcessed !== 1 ? 's' : ''}`;
+    }
+    if (totalProcessed > 0) {
+      await refreshStagingStatus();
+      toast(`Processed ${totalProcessed} photo${totalProcessed !== 1 ? 's' : ''}`);
+    } else {
+      toast('Nothing to process');
+    }
+    await loadPool();
+  } catch(e) {
+    toast('Processing failed: ' + e.message, true);
+    if (statusEl) statusEl.textContent = 'Processing failed';
+    if (totalProcessed > 0) await refreshStagingStatus();
+    await loadPool();
+  }
+
+  if (btn) { btn.disabled = false; btn.textContent = 'Process pool →'; }
+  if (statusEl && totalProcessed > 0) setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 4000);
+}
+
+async function discardRawPool(pid) {
+  if (!confirm('Discard this unprocessed photo?')) return;
+  try {
+    await api('DELETE', `/pool/raw/${pid}`);
+    poolData.raw = poolData.raw.filter(r => r.pid !== pid);
+    renderPoolGrid();
+    updatePoolRawStatus();
+    toast('Discarded');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+async function discardPoolPhoto(id) {
+  if (!confirm('Discard this processed photo from the pool?')) return;
+  try {
+    await api('DELETE', `/pool/${id}`);
+    poolData.processed = poolData.processed.filter(p => p.id !== id);
+    poolSelectedIds.delete(id);
+    renderPoolGrid();
+    updatePoolMoveBar();
+    await refreshStagingStatus();
+    toast('Discarded');
+  } catch(e) { toast('Failed: ' + e.message, true); }
+}
+
+// ── Pool picker (for "Add from pool" in series detail) ────────────────────
+let currentPoolPickerSlug = null;
+let poolPickerSelectedIds = new Set();
+
+async function openPoolPicker(slug) {
+  currentPoolPickerSlug = slug;
+  poolPickerSelectedIds = new Set();
+  const grid = document.getElementById('pool-picker-grid');
+  const btn = document.getElementById('pool-picker-add-btn');
+  btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
+  btn.textContent = 'Add to series →';
+  grid.innerHTML = '<span style="font-size:12px;color:var(--muted)">Loading…</span>';
+  openSheet('overlay-pool-picker');
+  try {
+    const data = await api('GET', '/pool');
+    const processed = data.processed || [];
+    if (!processed.length) {
+      grid.innerHTML = '<span style="font-size:12px;color:var(--muted)">No processed photos in pool. Upload and process photos in the Pool tab first.</span>';
+      return;
+    }
+    grid.innerHTML = '';
+    processed.forEach(p => {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'position:relative;cursor:pointer';
+      wrap.dataset.id = p.id;
+      wrap.onclick = () => togglePoolPickerPhoto(p.id, wrap);
+
+      const img = document.createElement('img');
+      img.src = `/assets/${p.key}/600.jpg`;
+      img.loading = 'lazy';
+      img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;border-radius:2px;border:2px solid transparent;display:block;transition:border-color .1s';
+      img.onerror = () => { img.style.display = 'none'; };
+
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:10px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+      label.textContent = p.caption || p.id;
+
+      wrap.appendChild(img);
+      wrap.appendChild(label);
+      grid.appendChild(wrap);
+    });
+  } catch(e) {
+    grid.innerHTML = `<span style="font-size:12px;color:var(--red)">Failed to load pool: ${esc(e.message)}</span>`;
+  }
+}
+
+function togglePoolPickerPhoto(id, el) {
+  const img = el.querySelector('img');
+  if (poolPickerSelectedIds.has(id)) {
+    poolPickerSelectedIds.delete(id);
+    if (img) img.style.borderColor = 'transparent';
+  } else {
+    poolPickerSelectedIds.add(id);
+    if (img) img.style.borderColor = 'var(--green)';
+  }
+  const btn = document.getElementById('pool-picker-add-btn');
+  const n = poolPickerSelectedIds.size;
+  btn.disabled = n === 0;
+  btn.style.opacity = n === 0 ? '.4' : '';
+  btn.style.pointerEvents = n === 0 ? 'none' : '';
+  btn.textContent = n === 0 ? 'Add to series →' : `Add ${n} to series →`;
+}
+
+async function confirmPoolPickerMove() {
+  const slug = currentPoolPickerSlug;
+  if (!slug || !poolPickerSelectedIds.size) return;
+  const ids = [...poolPickerSelectedIds];
+
+  const BATCH = 5;
+  let allMoved = [];
+  for (let i = 0; i < ids.length; i += BATCH) {
+    try {
+      const res = await api('POST', `/projects/${slug}/photos/from-pool`, { ids: ids.slice(i, i + BATCH) });
+      allMoved = allMoved.concat(res.moved || []);
+    } catch(e) { toast('Move failed: ' + e.message, true); break; }
+  }
+
+  if (allMoved.length) {
+    closeSheet('overlay-pool-picker');
+    await refreshStagingStatus();
+    toast(`Added ${allMoved.length} photo${allMoved.length !== 1 ? 's' : ''} to series`);
+
+    // Refresh series detail
+    const p = projects.find(x => x.slug === slug);
+    if (p) {
+      const [photos, settings] = await Promise.all([
+        api('GET', `/projects/${slug}/photos`).catch(() => []),
+        api('GET', '/settings').catch(() => ({})),
+      ]);
+      panelSettings = settings || {};
+      renderDetail(p, photos, panelSettings);
+    }
+
+    // Refresh pool count badge
+    api('GET', '/pool').then(data => {
+      const el = document.getElementById(`from-pool-count-${slug}`);
+      if (el) el.textContent = data.processed.length ? `${data.processed.length} in pool` : '';
+    }).catch(() => {});
+  }
+}
 
 // ── Util ──────────────────────────────────────────────────────────
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function jsString(s) { return JSON.stringify(String(s)); }
 </script>
 </body>
 </html>

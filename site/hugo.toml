@@ -1,4 +1,4 @@
-baseURL = "https://photos.ctsmith.org/"
+baseURL = "https://example.com/"
 locale = "en-us"
 title = "Photos"
 theme = "basalt"

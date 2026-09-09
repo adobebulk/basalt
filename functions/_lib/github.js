@@ -12,7 +12,7 @@ function headers(token) {
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "static-photos-admin",
+    "User-Agent": "basalt-admin",
     "Content-Type": "application/json",
   };
 }
@@ -29,7 +29,9 @@ export async function getFile(token, repo, path) {
   if (!res.ok) throw new Error(`GitHub GET ${path}: ${res.status} ${await res.text()}`);
   const json = await res.json();
   return {
-    content: atob(json.content.replace(/\s/g, "")),
+    content: new TextDecoder().decode(
+      Uint8Array.from(atob(json.content.replace(/\s/g, "")), c => c.charCodeAt(0))
+    ),
     sha: json.sha,
   };
 }

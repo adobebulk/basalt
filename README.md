@@ -2,7 +2,7 @@
 
 A self-hostable Hugo CMS with a serverless admin panel, Cloudflare R2 asset storage, and GitHub-based content versioning. Supports photo series with a full image-processing pipeline, text posts, and is designed to add new content types cleanly alongside existing ones.
 
-Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.1.0**
+Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.2.0**
 
 Content types: **photo series** (grid + lightbox + per-photo permalinks with optional long-form body text) and **text posts** (pure markdown, no photos required). The homepage supports an optional hero image (with caption overlay, linking to the photo's permalink), a curated featured row (series, posts, or individual photos), the full series grid, and a recent posts strip.
 
@@ -267,9 +267,9 @@ The photo upload pipeline resizes images via Cloudflare Image Transforms. This n
 
 1. **Upload** content via the admin panel at `/admin`. Photos are resized and stored in R2; metadata is staged in `_pending/` (inside ORIGINALS_BUCKET). Text posts are staged there too.
 2. **Edit** captions, settings, post body — all changes remain staged and immediately visible in the admin.
-3. **Rebuild** — the "Rebuild" button flushes all staged changes into a single GitHub commit, then POSTs to the deploy hook. Cloudflare Pages rebuilds the site (~30 seconds). Visitors see the update once the build completes.
+3. **Rebuild** — the "Rebuild" button flushes all staged changes into a single GitHub commit, then POSTs to the deploy hook. Cloudflare Pages rebuilds the site (~30 seconds). When `CF_ACCOUNT_ID` and `CF_API_TOKEN` (Pages Read) are set, the rebuild bar polls `GET /api/deploy-status` until the production deploy finishes or three minutes elapse.
 
-Staged changes never go to visitors until Rebuild is pressed. You can stage as many changes as you want and ship them all at once.
+Staged changes never go to visitors until Rebuild is pressed. You can stage as many changes as you want and ship them all at once. Settings reads can degrade when GitHub is unavailable, but settings writes require a readable GitHub baseline unless a staged settings file already exists.
 
 ---
 
@@ -345,10 +345,13 @@ npx wrangler tail                    # live Function logs in production
 | `ORIGINALS_BUCKET` | R2 binding | Private bucket — all originals + staging (`_pending/`) |
 | `GITHUB_TOKEN` | Secret | Fine-grained PAT, Contents read/write on this repo |
 | `GITHUB_REPO` | Var | `"owner/repo"` |
-| `DEPLOY_HOOK_URL` | Secret | Cloudflare Pages deploy hook URL |
+| `DEPLOY_HOOK_URL` | Secret | Cloudflare Pages deploy hook URL (never a wrangler.toml `[vars]` entry) |
 | `ASSETS_R2_PUBLIC_URL` | Var | Custom domain on assets R2 bucket — used as image transform source |
+| `PUBLIC_ORIGIN` | Var | Public site origin — used for CDN purge URLs |
 | `CF_ZONE_ID` | Var | *(optional)* Zone ID for CDN cache purge on asset deletion |
-| `CF_API_TOKEN` | Secret | *(optional)* Token with Cache Purge permission |
+| `CF_ACCOUNT_ID` | Var | *(optional)* Account ID — admin Rebuild bar polls Pages deploy status |
+| `CF_API_TOKEN` | Secret | *(optional)* Cache Purge and/or **Cloudflare Pages Read** |
+| `CF_PAGES_PROJECT` | Var | *(optional)* Pages project name; defaults to `basalt` |
 
 ---
 
