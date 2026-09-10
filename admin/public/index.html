@@ -690,7 +690,7 @@
       <div class="field">
         <div class="post-body-head">
           <label style="margin-bottom:0">Body (markdown)</label>
-          <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker()">⊕ Insert photo</button>
+          <button class="btn-outline" id="btn-insert-photo" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker()">⊕ Insert photo</button>
         </div>
         <textarea id="post-body" rows="12" style="min-height:220px" placeholder="Write your post in markdown…"></textarea>
       </div>
@@ -850,6 +850,18 @@ function applySiteConfig() {
   document.getElementById('tab-btn-pool').classList.toggle('hidden', !pool);
   document.getElementById('tab-series').classList.toggle('hidden', !series);
   document.getElementById('tab-bar')?.classList.toggle('hidden', [series, postsOn, pool].filter(Boolean).length < 2);
+  const insertBtn = document.getElementById('btn-insert-photo');
+  if (insertBtn) insertBtn.classList.toggle('hidden', !series && !pool);
+  const featType = document.getElementById('feat-type');
+  if (featType) {
+    [...featType.options].forEach((opt) => {
+      if (opt.value === 'series' || opt.value === 'photo') opt.hidden = !series;
+      if (opt.value === 'post') opt.hidden = !postsOn;
+    });
+    const visible = [...featType.options].find((opt) => !opt.hidden);
+    if (visible && featType.options[featType.selectedIndex]?.hidden) featType.value = visible.value;
+    onFeatTypeChange();
+  }
 }
 
 // ── Init ─────────────────────────────────────────────────────────
@@ -990,13 +1002,16 @@ async function openDetail(slug) {
   renderDetail(p, photos, panelSettings);
 
   // Async: update "N in pool" badge (non-fatal)
-  api('GET', '/pool').then(data => {
-    const el = document.getElementById(`from-pool-count-${slug}`);
-    if (el && data.processed.length) el.textContent = `${data.processed.length} in pool`;
-  }).catch(() => {});
+  if (typeOn('pool')) {
+    api('GET', '/pool').then(data => {
+      const el = document.getElementById(`from-pool-count-${slug}`);
+      if (el && data.processed.length) el.textContent = `${data.processed.length} in pool`;
+    }).catch(() => {});
+  }
 
   // Populate the "Attach a post" dropdown (non-fatal)
   try {
+    if (!typeOn('posts')) return;
     const allPosts = await api('GET', '/posts');
     const select = document.getElementById(`series-post-select-${slug}`);
     if (select) {
@@ -1057,11 +1072,12 @@ function renderDetail(p, photos, settings) {
              onchange="uploadFiles(this.files,'${p.slug}')">
     </div>
 
+    ${typeOn('pool') ? `
     <!-- Add from pool shortcut -->
     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
       <button class="btn-outline" onclick="openPoolPicker('${p.slug}')">Add from pool →</button>
       <span id="from-pool-count-${p.slug}" style="font-size:12px;color:var(--muted)"></span>
-    </div>
+    </div>` : ''}
 
     <!-- Metadata -->
     <div style="display:flex;flex-direction:column;gap:12px">
@@ -1085,6 +1101,7 @@ function renderDetail(p, photos, settings) {
       </div>
     </div>
 
+    ${typeOn('posts') ? `
     <!-- Related posts -->
     <div style="display:flex;flex-direction:column;gap:8px;padding-top:16px;border-top:1px solid var(--border-light)">
       <div style="font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Related writing</div>
@@ -1097,7 +1114,7 @@ function renderDetail(p, photos, settings) {
         </select>
         <button class="btn-outline" onclick="attachPostToSeries('${p.slug}')">Attach →</button>
       </div>
-    </div>
+    </div>` : ''}
 
   `;
 }
@@ -1232,6 +1249,7 @@ function renderSeriesPostsList(seriesSlug, seriesPosts) {
 }
 
 async function attachPostToSeries(seriesSlug) {
+  if (!typeOn('posts')) return;
   const select = document.getElementById(`series-post-select-${seriesSlug}`);
   const postSlug = select.value;
   if (!postSlug) { toast('Select a post first', true); return; }
@@ -1610,24 +1628,29 @@ async function deletePost() {
 let pickerSelectedPhoto = null;
 
 async function openPhotoPicker() {
+  if (!typeOn('series') && !typeOn('pool')) return;
   pickerSelectedPhoto = null;
   const btn = document.getElementById('picker-insert-btn');
   btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
 
   const select = document.getElementById('picker-series-select');
   select.innerHTML = '<option value="">Select series…</option>';
-  const poolOpt = document.createElement('option');
-  poolOpt.value = '_pool';
-  poolOpt.textContent = 'Pool';
-  select.appendChild(poolOpt);
+  if (typeOn('pool')) {
+    const poolOpt = document.createElement('option');
+    poolOpt.value = '_pool';
+    poolOpt.textContent = 'Pool';
+    select.appendChild(poolOpt);
+  }
   try {
-    const projs = await api('GET', '/projects');
-    projs.filter(p => p.slug !== '_pool').forEach(p => {
-      const opt = document.createElement('option');
-      opt.value = p.slug;
-      opt.textContent = p.title || p.slug;
-      select.appendChild(opt);
-    });
+    if (typeOn('series')) {
+      const projs = await api('GET', '/projects');
+      projs.filter(p => p.slug !== '_pool').forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.slug;
+        opt.textContent = p.title || p.slug;
+        select.appendChild(opt);
+      });
+    }
   } catch(e) { toast('Failed to load series', true); return; }
   document.getElementById('picker-photo-grid').innerHTML = '';
   document.getElementById('picker-alt').value = '';
@@ -2135,6 +2158,7 @@ let currentPoolPickerSlug = null;
 let poolPickerSelectedIds = new Set();
 
 async function openPoolPicker(slug) {
+  if (!typeOn('pool')) return;
   currentPoolPickerSlug = slug;
   poolPickerSelectedIds = new Set();
   const grid = document.getElementById('pool-picker-grid');

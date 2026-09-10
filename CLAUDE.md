@@ -340,7 +340,7 @@ During local `wrangler pages dev`, logs print to the terminal.
 ## Current state (last updated: 2026-09-08)
 
 ### v0.3.0 — CURRENT
-- Site identity config `site/data/basalt.yaml` (`contentTypes`, `homepage`, `nav`). Admin tabs and API routes follow it. Hugo reads `.Site.Data.basalt`.
+- Site identity config `site/data/basalt.yaml` (`contentTypes`, `homepage`, `nav`). Admin tabs/actions and API routes follow it. Hugo uses `partials/basalt-config.html` (same normalization as `functions/_lib/config.js`).
 - Default theme can be overlaid (`theme = ["site", "basalt"]`). Blog example: `examples/blog/basalt.yaml`.
 - `pages` / `splash` / `nav: configurable` are reserved in the schema; not implemented in the engine yet.
 

@@ -5,7 +5,8 @@
  * This file is what makes a gallery, a blog, or a personal site out of the
  * same engine: which content types exist, and which homepage the theme uses.
  *
- * Hugo reads the YAML as .Site.Data.basalt at build time.
+ * Hugo must apply the same rules via layouts/partials/basalt-config.html
+ * (do not read .Site.Data.basalt raw in templates).
  * Functions read it from GitHub / staging the same way as settings.yaml.
  */
 

@@ -78,7 +78,8 @@ theme = ["site", "basalt"]
 
 Put instance layouts in `site/themes/site/layouts/` (same paths as Basalt). Hugo
 uses the instance file when it exists and falls through to Basalt otherwise.
-Do not fork `functions/` or `admin/` in the instance.
+`tailwind.config.js` scans `site/themes/**/layouts/**/*.html` so overlay utilities
+are included in the CSS build. Do not fork `functions/` or `admin/` in the instance.
 
 ---
 

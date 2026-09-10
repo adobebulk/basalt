@@ -5,9 +5,9 @@
   {{ partial "header.html" . }}
 
   {{- $s := .Site.Data.settings -}}
-  {{- $b := .Site.Data.basalt -}}
-  {{- $types := $b.contentTypes | default (dict "series" true "posts" true) -}}
-  {{- $home := $b.homepage | default "gallery" -}}
+  {{- $b := partial "basalt-config.html" . -}}
+  {{- $types := $b.contentTypes -}}
+  {{- $home := $b.homepage -}}
   {{- $base := .Site.Params.assetsBaseURL -}}
 
   <main class="flex-1">
