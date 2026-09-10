@@ -342,6 +342,7 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 - [ ] Phase 0: wire Cloudflare/GitHub account bindings for production (see RUNBOOK.md).
 - [ ] Admin UI: drag-to-reorder photos (currently up/down arrows; pointer drag would be smoother).
+- [ ] Reject mutating admin API requests when `GITHUB_TOKEN` is missing or a placeholder. `getFile` raw fallback is for reads; `githubFileRequired` currently treats a placeholder as truthy, so PATCH/settings and other edits can stage without a real PAT. Rebuild still cannot commit. Export `isUsableToken` and fail those writes immediately. Caught on static-photos #1 (Codex P1).
 
 ---
 
