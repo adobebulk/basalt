@@ -4,7 +4,7 @@ Basalt is a generic Hugo CMS built on the static-photos infrastructure.
 It supports multiple content types out of the box and is designed to be
 the CMS backbone for any Hugo-based site.
 
-**Version:** 0.4.0  
+**Version:** 0.4.1  
 **Repo:** https://github.com/adobebulk/basalt  
 
 Basalt is the **engine**. A live site is an **instance**: its own GitHub repo,
@@ -116,7 +116,7 @@ are included in the CSS build. Do not fork `functions/` or `admin/` in the insta
 
 Source of truth is `package.json`. Keep `wrangler.toml [vars] PACKAGE_VERSION` in sync.
 Minor bump for new content types or features; patch for fixes.
-Current: **0.4.0**
+Current: **0.4.1**
 
 This repo is the CMS source of truth. Live sites (`static-photos`, `ctsmith-org`,
 future blog) consume it; they are not upstream.

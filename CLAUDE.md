@@ -153,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.4.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.4.1**
 
 ---
 
@@ -345,9 +345,12 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ---
 
-## Current state (last updated: 2026-09-08)
+## Current state (last updated: 2026-09-10)
 
-### v0.4.0 — CURRENT
+### v0.4.1 — CURRENT
+- Admin can list GitHub series/posts/pages without a PAT on a public repo (`listGithubDirs` requires `GITHUB_REPO` only). Writes still need a real token.
+
+### v0.4.0
 - Pages, splash homepage, and configurable navbar are in the engine, gated by `site/data/basalt.yaml`. Recipes: `examples/photos`, `examples/website`, `examples/blog`.
 
 ### v0.3.0
