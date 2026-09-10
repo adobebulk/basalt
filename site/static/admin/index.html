@@ -973,11 +973,11 @@ function typeOn(type) {
 }
 
 function pagesUiOn() {
-  return typeOn('pages') || siteConfig.homepage === 'splash';
+  return typeOn('pages') || siteConfig.homepage === 'splash' || siteConfig.nav === 'configurable';
 }
 
 function navUiOn() {
-  return siteConfig.nav === 'configurable' || typeOn('pages');
+  return siteConfig.nav === 'configurable';
 }
 
 function firstEnabledTab() {
@@ -1685,7 +1685,7 @@ function renderPagesList() {
       <div class="post-card-actions">
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPage('${esc(p.slug)}')">Edit</button>
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePagePublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
-        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePage(${jsString(p.slug)},${jsString(p.title)})">Del</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="${onclickHandler('confirmDeletePage', p.slug, p.title)}">Del</button>
       </div>
     </div>
   `).join('');
@@ -2019,7 +2019,7 @@ function renderPostsList() {
       <div class="post-card-actions">
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPost('${esc(p.slug)}')">Edit</button>
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePostPublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
-        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePost(${jsString(p.slug)},${jsString(p.title)})">Del</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="${onclickHandler('confirmDeletePost', p.slug, p.title)}">Del</button>
       </div>
     </div>
   `).join('');
@@ -2770,6 +2770,10 @@ async function confirmPoolPickerMove() {
 // ── Util ──────────────────────────────────────────────────────────
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s) { return JSON.stringify(String(s)); }
+function onclickHandler(fn, ...args) {
+  const inner = args.map((a) => JSON.stringify(String(a))).join(',');
+  return `${fn}(${inner.replace(/&/g, '&amp;').replace(/"/g, '&quot;')})`;
+}
 </script>
 </body>
 </html>

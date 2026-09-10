@@ -58,8 +58,8 @@ contentTypes:
   pool: true
   posts: true
   pages: false
-homepage: gallery    # gallery | posts | splash
-nav: default         # default | configurable
+homepage: gallery    # gallery | posts | splash (splash does not require pages)
+nav: default         # default | configurable (navbar editor only when configurable)
 ```
 
 Recipes in `examples/`:

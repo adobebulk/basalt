@@ -963,6 +963,7 @@ export async function onRequest(ctx) {
       const weight = new Set([...ghSlugs, ...stagedSlugs]).size + 1;
       const data = {
         title,
+        slug,
         date: new Date().toISOString().split("T")[0],
         draft: Boolean(draft),
         nav: Boolean(nav),
@@ -1007,6 +1008,7 @@ export async function onRequest(ctx) {
       for (const f of updatableFields) {
         if (updates[f] !== undefined) updatedData[f] = updates[f];
       }
+      updatedData.slug = slug;
       const updatedBody = updates.body !== undefined ? updates.body : pageBody(rawBody);
       await stageFile(env.stagingBucket, pagePath(slug), serializeFrontMatter(updatedData, updatedBody));
       return json({ slug, ...updatedData, body: updatedBody });
@@ -1051,7 +1053,7 @@ export async function onRequest(ctx) {
       );
       if (!result) return err("page not found", 404);
       const { data, body: rawBody } = parseFrontMatter(result.content);
-      const updatedData = { ...data, draft: Boolean(draft) };
+      const updatedData = { ...data, draft: Boolean(draft), slug };
       await stageFile(env.stagingBucket, pagePath(slug), serializeFrontMatter(updatedData, pageBody(rawBody)));
       return json({ slug, draft: Boolean(draft) });
     }

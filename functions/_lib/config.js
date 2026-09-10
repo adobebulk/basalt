@@ -62,9 +62,7 @@ export function normalizeConfig(raw = {}) {
   let homepage = HOMEPAGES.has(raw.homepage) ? raw.homepage : DEFAULT_CONFIG.homepage;
   if (homepage === "gallery" && !contentTypes.series && contentTypes.posts) homepage = "posts";
   if (homepage === "posts" && !contentTypes.posts && contentTypes.series) homepage = "gallery";
-  if (homepage === "splash" && !contentTypes.pages) {
-    homepage = contentTypes.series ? "gallery" : contentTypes.posts ? "posts" : "gallery";
-  }
+  // splash is valid without pages (homepage editor only; no subpage CRUD).
 
   const nav = raw.nav === "configurable" ? "configurable" : "default";
   return { contentTypes, homepage, nav };

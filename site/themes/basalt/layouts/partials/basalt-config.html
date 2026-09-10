@@ -31,12 +31,7 @@
 {{- if not (in (slice "gallery" "posts" "splash") $home) -}}{{- $home = "gallery" -}}{{- end -}}
 {{- if and (eq $home "gallery") (not $series) $posts -}}{{- $home = "posts" -}}{{- end -}}
 {{- if and (eq $home "posts") (not $posts) $series -}}{{- $home = "gallery" -}}{{- end -}}
-{{- if and (eq $home "splash") (not $pages) -}}
-  {{- if $series -}}{{- $home = "gallery" -}}
-  {{- else if $posts -}}{{- $home = "posts" -}}
-  {{- else -}}{{- $home = "gallery" -}}
-  {{- end -}}
-{{- end -}}
+{{- /* splash is valid without pages (homepage editor only). */ -}}
 
 {{- $nav := "default" -}}
 {{- if eq $raw.nav "configurable" -}}{{- $nav = "configurable" -}}{{- end -}}
