@@ -5,9 +5,37 @@
   {{ partial "header.html" . }}
 
   {{- $s := .Site.Data.settings -}}
+  {{- $b := partial "basalt-config.html" . -}}
+  {{- $types := $b.contentTypes -}}
+  {{- $home := $b.homepage -}}
   {{- $base := .Site.Params.assetsBaseURL -}}
 
   <main class="flex-1">
+
+    {{- if eq $home "posts" -}}
+    {{- $postSection := site.GetPage "/posts" -}}
+    <section class="w-full max-w-2xl mx-auto px-6 py-10">
+      <h1 class="text-2xl font-bold tracking-tight">{{ $s.title | default .Site.Title }}</h1>
+      {{- with $s.description -}}
+      <p class="mt-2 text-sm text-stone-500">{{ . }}</p>
+      {{- end -}}
+      <ul class="mt-8 space-y-6">
+        {{- with $postSection -}}
+        {{- range where .Pages "Params.draft" "ne" true -}}
+        <li>
+          <a href="{{ .RelPermalink }}" class="group block">
+            <span class="text-sm font-semibold text-stone-800 group-hover:text-stone-900 transition-colors">{{ .Title }}</span>
+            <span class="ml-3 text-xs text-stone-400 tabular-nums">{{ .Date.Format "2006-01-02" }}</span>
+            {{- with .Params.excerpt }}
+            <p class="mt-1 text-xs text-stone-500 leading-relaxed">{{ . }}</p>
+            {{- end }}
+          </a>
+        </li>
+        {{- end -}}
+        {{- end -}}
+      </ul>
+    </section>
+    {{- else -}}
 
     {{/* ── Section 1: Hero ── */}}
     {{- with $s.heroPhotoKey -}}
@@ -121,6 +149,7 @@
     {{- end -}}
 
     {{/* ── Section 3: Series grid ── */}}
+    {{- if $types.series -}}
     <section class="p-1.5">
       {{- $projects := where (site.GetPage "/projects").Sections "Params.draft" "ne" true -}}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
@@ -151,10 +180,11 @@
         {{- end -}}
       </div>
     </section>
+    {{- end -}}
 
     {{/* ── Section 4: Recent posts (deduped from featured) ── */}}
     {{- $postSection := site.GetPage "/posts" -}}
-    {{- if $postSection -}}
+    {{- if and $types.posts $postSection -}}
       {{/* Build set of post slugs already in featured */}}
       {{- $featPostSlugs := slice -}}
       {{- range $s.featured -}}
@@ -190,6 +220,8 @@
       </section>
       {{- end -}}
     {{- end -}}
+
+    {{- end -}}{{/* end gallery homepage */}}
 
   </main>
 

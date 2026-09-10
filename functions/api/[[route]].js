@@ -19,6 +19,7 @@
 
 import yaml from "js-yaml";
 import { getEnv } from "../_lib/env.js";
+import { readConfig, typeEnabled } from "../_lib/config.js";
 import { getFile, listDir } from "../_lib/github.js";
 import {
   stageFile, stageDelete, readStaged,
@@ -399,6 +400,23 @@ export async function onRequest(ctx) {
     : [];
 
   try {
+    const config = await readConfig(env);
+    const root = segments[0];
+
+    if (method === "GET" && segments.length === 1 && root === "config") {
+      return json(config);
+    }
+
+    if (root === "projects") {
+      if (!typeEnabled(config, "series")) return err("series is disabled", 404);
+      if (segments[3] === "from-pool" && !typeEnabled(config, "pool")) {
+        return err("pool is disabled", 404);
+      }
+    }
+    if (root === "pool" && !typeEnabled(config, "pool")) return err("pool is disabled", 404);
+    if (root === "posts" && !typeEnabled(config, "posts")) return err("posts is disabled", 404);
+    if (root === "pages" && !typeEnabled(config, "pages")) return err("pages is disabled", 404);
+
     // ── GET /api/projects ────────────────────────────────────────────────────
     if (method === "GET" && segments.length === 1 && segments[0] === "projects") {
       const ghSlugs = await listGithubDirs(env, "site/content/projects");

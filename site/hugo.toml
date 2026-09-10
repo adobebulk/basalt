@@ -1,6 +1,8 @@
 baseURL = "https://example.com/"
 locale = "en-us"
 title = "Photos"
+# Instance repos overlay this theme: theme = ["site", "basalt"]
+# (layouts in themes/site win; missing files fall through to basalt).
 theme = "basalt"
 
 [params]

@@ -1,0 +1,18 @@
+# Site identity for the Basalt engine.
+# Not secrets — those live in the Cloudflare Pages project (wrangler / dashboard).
+# Instance repos change this file (and overlay templates) to differentiate sites.
+#
+# contentTypes: series, pool, posts, pages
+#   pool requires series (the engine turns pool off if series is off).
+# homepage: gallery | posts | splash
+#   splash is reserved (personal-site homepage); ignored until that kernel lands.
+# nav: default | configurable
+#   configurable is reserved (admin navbar editor); default uses settings.navLabel.
+
+contentTypes:
+  series: true
+  pool: true
+  posts: true
+  pages: false
+homepage: gallery
+nav: default

@@ -1,0 +1,48 @@
+{{/*
+  Normalize site/data/basalt.yaml the same way functions/_lib/config.js
+  normalizeConfig does. Missing contentType keys keep engine defaults;
+  pool requires series; homepage remaps when its type is disabled.
+
+  Usage: {{ $b := partial "basalt-config.html" . }}
+*/}}
+{{- $raw := .Site.Data.basalt | default dict -}}
+{{- $series := true -}}
+{{- $pool := true -}}
+{{- $posts := true -}}
+{{- $pages := false -}}
+{{- if isset $raw "contentTypes" -}}
+  {{- $ct := index $raw "contentTypes" -}}
+  {{- if reflect.IsSlice $ct -}}
+    {{- /* Empty list disables all types (same as JS normalizeConfig). `with` skips empty slices. */ -}}
+    {{- $series = in $ct "series" -}}
+    {{- $pool = in $ct "pool" -}}
+    {{- $posts = in $ct "posts" -}}
+    {{- $pages = in $ct "pages" -}}
+  {{- else if $ct -}}
+    {{- if isset $ct "series" -}}{{- $series = $ct.series -}}{{- end -}}
+    {{- if isset $ct "pool" -}}{{- $pool = $ct.pool -}}{{- end -}}
+    {{- if isset $ct "posts" -}}{{- $posts = $ct.posts -}}{{- end -}}
+    {{- if isset $ct "pages" -}}{{- $pages = $ct.pages -}}{{- end -}}
+  {{- end -}}
+{{- end -}}
+{{- if and $pool (not $series) -}}{{- $pool = false -}}{{- end -}}
+
+{{- $home := $raw.homepage | default "gallery" -}}
+{{- if not (in (slice "gallery" "posts" "splash") $home) -}}{{- $home = "gallery" -}}{{- end -}}
+{{- if and (eq $home "gallery") (not $series) $posts -}}{{- $home = "posts" -}}{{- end -}}
+{{- if and (eq $home "posts") (not $posts) $series -}}{{- $home = "gallery" -}}{{- end -}}
+{{- if and (eq $home "splash") (not $pages) -}}
+  {{- if $series -}}{{- $home = "gallery" -}}
+  {{- else if $posts -}}{{- $home = "posts" -}}
+  {{- else -}}{{- $home = "gallery" -}}
+  {{- end -}}
+{{- end -}}
+
+{{- $nav := "default" -}}
+{{- if eq $raw.nav "configurable" -}}{{- $nav = "configurable" -}}{{- end -}}
+
+{{- return (dict
+  "contentTypes" (dict "series" $series "pool" $pool "posts" $posts "pages" $pages)
+  "homepage" $home
+  "nav" $nav
+) -}}

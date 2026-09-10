@@ -1,0 +1,8 @@
+# Copy over site/data/basalt.yaml in a blog instance.
+contentTypes:
+  series: false
+  pool: false
+  posts: true
+  pages: false
+homepage: posts
+nav: default
