@@ -6,6 +6,7 @@
  */
 
 const GH_API = "https://api.github.com";
+const RAW_GH = "https://raw.githubusercontent.com";
 
 function isUsableToken(token) {
   if (!token || typeof token !== "string") return false;
@@ -28,23 +29,42 @@ function headers(token, { write = false } = {}) {
   return h;
 }
 
-/**
- * Read a single file from the repo.
- * Returns { content: string (utf-8), sha: string } or null if not found.
- */
-export async function getFile(token, repo, path) {
-  const res = await fetch(`${GH_API}/repos/${repo}/contents/${path}`, {
-    headers: headers(token),
+async function getRawFile(repo, path, branch = "main") {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(`${RAW_GH}/${repo}/${branch}/${encoded}`, {
+    headers: { "User-Agent": "basalt-admin", Accept: "text/plain" },
   });
   if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`GitHub GET ${path}: ${res.status} ${await res.text()}`);
-  const json = await res.json();
-  return {
-    content: new TextDecoder().decode(
-      Uint8Array.from(atob(json.content.replace(/\s/g, "")), c => c.charCodeAt(0))
-    ),
-    sha: json.sha,
-  };
+  if (!res.ok) throw new Error(`GitHub raw GET ${path}: ${res.status} ${await res.text()}`);
+  return { content: await res.text(), sha: null };
+}
+
+/**
+ * Read a single file from the repo.
+ * Returns { content: string (utf-8), sha: string|null } or null if not found.
+ *
+ * Authenticated Contents API is preferred (SHA + private repos). Placeholder
+ * tokens skip auth, and unauthenticated Contents is 60 req/hr — so public
+ * reads without a real token go through raw.githubusercontent.com instead.
+ */
+export async function getFile(token, repo, path, { branch = "main" } = {}) {
+  if (isUsableToken(token)) {
+    const res = await fetch(`${GH_API}/repos/${repo}/contents/${path}`, {
+      headers: headers(token),
+    });
+    if (res.status === 404) return null;
+    if (res.ok) {
+      const json = await res.json();
+      return {
+        content: new TextDecoder().decode(
+          Uint8Array.from(atob(json.content.replace(/\s/g, "")), c => c.charCodeAt(0))
+        ),
+        sha: json.sha,
+      };
+    }
+    console.error(`GitHub GET ${path}: ${res.status} ${await res.text()}`);
+  }
+  return getRawFile(repo, path, branch);
 }
 
 /**
