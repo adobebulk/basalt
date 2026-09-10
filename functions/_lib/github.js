@@ -2,10 +2,13 @@
  * GitHub Contents + Git Trees API helpers.
  *
  * All writes use the Git Trees API so multiple files can land in a single commit.
- * Reads use the simpler Contents API.
+ * Authenticated reads use Contents; public reads without a PAT use
+ * raw.githubusercontent.com (unauthenticated Contents is 60 req/hr).
  */
 
 const GH_API = "https://api.github.com";
+const RAW_GH = "https://raw.githubusercontent.com";
+const DEFAULT_BRANCH = "main";
 
 function isUsableToken(token) {
   if (!token || typeof token !== "string") return false;
@@ -28,14 +31,28 @@ function headers(token, { write = false } = {}) {
   return h;
 }
 
+async function getRawFile(repo, path, branch = DEFAULT_BRANCH) {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  const res = await fetch(`${RAW_GH}/${repo}/${branch}/${encoded}`, {
+    headers: { "User-Agent": "basalt-admin", Accept: "text/plain" },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`GitHub raw GET ${path}: ${res.status} ${await res.text()}`);
+  return { content: await res.text(), sha: null };
+}
+
 /**
  * Read a single file from the repo.
- * Returns { content: string (utf-8), sha: string } or null if not found.
+ * Returns { content: string (utf-8), sha: string|null } or null if not found.
  */
-export async function getFile(token, repo, path) {
-  const res = await fetch(`${GH_API}/repos/${repo}/contents/${path}`, {
-    headers: headers(token),
-  });
+export async function getFile(token, repo, path, { branch = DEFAULT_BRANCH } = {}) {
+  if (!isUsableToken(token)) {
+    return getRawFile(repo, path, branch);
+  }
+  const res = await fetch(
+    `${GH_API}/repos/${repo}/contents/${path}?ref=${encodeURIComponent(branch)}`,
+    { headers: headers(token) }
+  );
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`GitHub GET ${path}: ${res.status} ${await res.text()}`);
   const json = await res.json();
@@ -66,7 +83,7 @@ export async function listDir(token, repo, path) {
  * files: Array of { path: string, content: string (utf-8) }
  * deletions: Array of path strings to remove in the same commit (optional)
  */
-export async function commitFiles({ token, repo, branch = "main", message, files = [], deletions = [] }) {
+export async function commitFiles({ token, repo, branch = DEFAULT_BRANCH, message, files = [], deletions = [] }) {
   const h = headers(token, { write: true });
 
   // 1. Get current HEAD ref

@@ -352,7 +352,7 @@ async function listGithubDirs(env, path) {
 }
 
 async function githubFileFallback(env, path) {
-  if (!env.githubToken || !env.githubRepo) return null;
+  if (!env.githubRepo) return null;
   try {
     return await getFile(env.githubToken, env.githubRepo, path);
   } catch (e) {

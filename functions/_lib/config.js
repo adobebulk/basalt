@@ -31,7 +31,7 @@ const KNOWN_TYPES = ["series", "pool", "posts", "pages"];
 const HOMEPAGES = new Set(["gallery", "posts", "splash"]);
 
 async function githubFileFallback(env, path) {
-  if (!env.githubToken || !env.githubRepo) return null;
+  if (!env.githubRepo) return null;
   try {
     return await getFile(env.githubToken, env.githubRepo, path);
   } catch (e) {
