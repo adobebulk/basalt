@@ -10,17 +10,19 @@
 {{- $pool := true -}}
 {{- $posts := true -}}
 {{- $pages := false -}}
-{{- with $raw.contentTypes -}}
-  {{- if reflect.IsSlice . -}}
-    {{- $series = in . "series" -}}
-    {{- $pool = in . "pool" -}}
-    {{- $posts = in . "posts" -}}
-    {{- $pages = in . "pages" -}}
-  {{- else -}}
-    {{- if isset . "series" -}}{{- $series = .series -}}{{- end -}}
-    {{- if isset . "pool" -}}{{- $pool = .pool -}}{{- end -}}
-    {{- if isset . "posts" -}}{{- $posts = .posts -}}{{- end -}}
-    {{- if isset . "pages" -}}{{- $pages = .pages -}}{{- end -}}
+{{- if isset $raw "contentTypes" -}}
+  {{- $ct := index $raw "contentTypes" -}}
+  {{- if reflect.IsSlice $ct -}}
+    {{- /* Empty list disables all types (same as JS normalizeConfig). `with` skips empty slices. */ -}}
+    {{- $series = in $ct "series" -}}
+    {{- $pool = in $ct "pool" -}}
+    {{- $posts = in $ct "posts" -}}
+    {{- $pages = in $ct "pages" -}}
+  {{- else if $ct -}}
+    {{- if isset $ct "series" -}}{{- $series = $ct.series -}}{{- end -}}
+    {{- if isset $ct "pool" -}}{{- $pool = $ct.pool -}}{{- end -}}
+    {{- if isset $ct "posts" -}}{{- $posts = $ct.posts -}}{{- end -}}
+    {{- if isset $ct "pages" -}}{{- $pages = $ct.pages -}}{{- end -}}
   {{- end -}}
 {{- end -}}
 {{- if and $pool (not $series) -}}{{- $pool = false -}}{{- end -}}
