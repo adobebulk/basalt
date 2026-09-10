@@ -1,0 +1,8 @@
+# Personal-site instance (ctsmith-org style).
+contentTypes:
+  series: false
+  pool: false
+  posts: true
+  pages: true
+homepage: splash
+nav: configurable

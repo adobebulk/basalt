@@ -2,11 +2,11 @@
 
 A self-hostable Hugo CMS with a serverless admin panel, Cloudflare R2 asset storage, and GitHub-based content versioning. Supports photo series with a full image-processing pipeline, text posts, and is designed to add new content types cleanly alongside existing ones.
 
-Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.3.0**
+Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.4.0**
 
 This repo is the **engine**. A live site is a separate **instance** (own Pages project, R2, Access, secrets) that sets `site/data/basalt.yaml` and optionally overlays Hugo templates. See **BASALT.md**.
 
-Content types (enable per instance): **photo series**, **photo pool**, **text posts**. The default homepage is a gallery (hero, featured, series grid, recent posts). Set `homepage: posts` for a blog.
+Content types (enable per instance): **photo series**, **photo pool**, **text posts**, **pages**. Homepages: `gallery`, `posts`, or `splash`. Set `nav: configurable` for the admin navbar editor. Recipes in `examples/`.
 
 ---
 

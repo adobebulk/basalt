@@ -16,6 +16,27 @@
   .project-thumb {
     @apply w-full h-full bg-cover bg-center transition-transform duration-400 group-hover:scale-103;
   }
+
+  .splash-name {
+    display: inline-block;
+    margin: 0 20px 0 0;
+    padding-right: 23px;
+    font-size: 24px;
+    font-weight: 500;
+    vertical-align: top;
+    line-height: 49px;
+    border-right: 1px solid rgba(0, 0, 0, 0.3);
+  }
+  .splash-tagline {
+    display: inline-block;
+    text-align: left;
+  }
+  .splash-tagline h2 {
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 49px;
+    margin: 0;
+  }
 }
 
 @layer utilities {

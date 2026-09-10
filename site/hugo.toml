@@ -15,6 +15,9 @@ theme = "basalt"
   # e.g. /assets/iceland-2025/001/1200.avif
   assetsBaseURL = "/assets"
 
+[permalinks]
+  pages = "/:slug/"
+
 [build]
   writeStats = true
 

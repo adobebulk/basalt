@@ -7,14 +7,25 @@
 
 const GH_API = "https://api.github.com";
 
-function headers(token) {
-  return {
-    Authorization: `Bearer ${token}`,
+function isUsableToken(token) {
+  if (!token || typeof token !== "string") return false;
+  if (/your_scoped_token_here|ghp_your_/i.test(token)) return false;
+  return true;
+}
+
+function headers(token, { write = false } = {}) {
+  const h = {
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": "basalt-admin",
     "Content-Type": "application/json",
   };
+  if (isUsableToken(token)) {
+    h.Authorization = `Bearer ${token}`;
+  } else if (write) {
+    throw new Error("GITHUB_TOKEN not configured");
+  }
+  return h;
 }
 
 /**
@@ -56,7 +67,7 @@ export async function listDir(token, repo, path) {
  * deletions: Array of path strings to remove in the same commit (optional)
  */
 export async function commitFiles({ token, repo, branch = "main", message, files = [], deletions = [] }) {
-  const h = headers(token);
+  const h = headers(token, { write: true });
 
   // 1. Get current HEAD ref
   const refRes = await fetch(`${GH_API}/repos/${repo}/git/ref/heads/${branch}`, { headers: h });

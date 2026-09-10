@@ -2,13 +2,31 @@
 <html lang="{{ .Site.Language.Locale }}">
 <head>{{ partial "head.html" . }}</head>
 <body class="min-h-screen flex flex-col bg-stone-50 text-stone-900 font-sans">
-  {{ partial "header.html" . }}
-
   {{- $s := .Site.Data.settings -}}
   {{- $b := partial "basalt-config.html" . -}}
   {{- $types := $b.contentTypes -}}
   {{- $home := $b.homepage -}}
   {{- $base := .Site.Params.assetsBaseURL -}}
+
+  {{- if eq $home "splash" -}}
+  {{- $title := .Params.title | default $s.title | default .Site.Title -}}
+  {{- $tagline := .Params.tagline | default $s.description | default .Site.Params.description -}}
+  <main class="min-h-screen flex flex-col items-center justify-center text-center px-6">
+    <div>
+      <h1 class="splash-name">{{ $title }}</h1>
+      <div class="splash-tagline">
+        <h2>{{ $tagline }}</h2>
+      </div>
+    </div>
+    <div class="mt-8">{{ partial "nav.html" . }}</div>
+    {{- with .Content -}}
+    <div class="mt-12 w-full max-w-2xl text-left prose text-sm leading-relaxed">
+      {{ . }}
+    </div>
+    {{- end -}}
+  </main>
+  {{- else -}}
+  {{ partial "header.html" . }}
 
   <main class="flex-1">
 
@@ -226,5 +244,6 @@
   </main>
 
   {{ partial "footer.html" . }}
+  {{- end -}}{{/* end not-splash */}}
 </body>
 </html>

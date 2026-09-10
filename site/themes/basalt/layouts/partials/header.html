@@ -1,16 +1,6 @@
 {{- $s := .Site.Data.settings -}}
 {{- $b := partial "basalt-config.html" . -}}
-{{- $types := $b.contentTypes -}}
 <header class="sticky top-0 z-50 h-14 flex items-center justify-between px-6 bg-stone-50 border-b border-stone-200">
   <a href="{{ "/" | relURL }}" class="text-sm font-semibold tracking-tight">{{ $s.title | default .Site.Title }}</a>
-  <nav class="flex gap-6 text-sm text-stone-400">
-    {{- if $types.series -}}
-    {{- $seriesHref := "/projects/" | relURL -}}
-    {{- if eq ($b.homepage | default "gallery") "gallery" -}}{{- $seriesHref = "/" | relURL -}}{{- end -}}
-    <a href="{{ $seriesHref }}" class="hover:text-stone-900 transition-colors">{{ $s.navLabel | default "Work" }}</a>
-    {{- end -}}
-    {{- if $types.posts -}}
-    <a href="{{ "/posts/" | relURL }}" class="hover:text-stone-900 transition-colors">{{ if $types.series }}Posts{{ else }}{{ $s.navLabel | default "Posts" }}{{ end }}</a>
-    {{- end -}}
-  </nav>
+  {{ partial "nav.html" . }}
 </header>

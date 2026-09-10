@@ -1,0 +1,8 @@
+# Photos-site instance (static-photos style).
+contentTypes:
+  series: true
+  pool: true
+  posts: true
+  pages: false
+homepage: gallery
+nav: default
