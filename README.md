@@ -2,7 +2,7 @@
 
 A self-hostable Hugo CMS with a serverless admin panel, Cloudflare R2 asset storage, and GitHub-based content versioning. Supports photo series with a full image-processing pipeline, text posts, and is designed to add new content types cleanly alongside existing ones.
 
-Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.4.0**
+Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.4.1**
 
 This repo is the **engine**. A live site is a separate **instance** (own Pages project, R2, Access, secrets) that sets `site/data/basalt.yaml` and optionally overlays Hugo templates. See **BASALT.md**.
 
@@ -242,7 +242,7 @@ To run the admin API locally with real R2 bindings:
 cp .dev.vars.example .dev.vars
 ```
 
-Fill in `.dev.vars` with your `GITHUB_TOKEN`, `GITHUB_REPO`, and `DEPLOY_HOOK_URL`. Then:
+Fill in `.dev.vars` with `GITHUB_REPO` and `DEPLOY_HOOK_URL`. A real `GITHUB_TOKEN` is required to save from admin. Public-repo reads (file contents and directory lists) work without one. Then:
 
 ```bash
 npx wrangler pages dev site/public \
