@@ -559,7 +559,7 @@
   <!-- Header -->
   <div class="topbar">
     <div class="topbar-left">
-      <span class="site-name">Photo Admin</span>
+      <span class="site-name">Admin</span>
       <div class="topbar-nav">
         <button onclick="openSettings()">Settings</button>
         <button id="btn-new" onclick="onNew()">+ New</button>
@@ -570,7 +570,7 @@
   </div>
 
   <!-- Tab bar -->
-  <div class="tab-bar">
+  <div class="tab-bar" id="tab-bar">
     <button class="tab-btn active" id="tab-btn-series" onclick="switchTab('series')">Series</button>
     <button class="tab-btn" id="tab-btn-posts" onclick="switchTab('posts')">Posts</button>
     <button class="tab-btn" id="tab-btn-pool" onclick="switchTab('pool')">Pool</button>
@@ -824,12 +824,49 @@ let editingPost   = null;
 let featuredItems = [];
 let panelSettings = {}; // cached per-panel settings (series detail)
 let sheetStack    = [];
+let siteConfig    = {
+  contentTypes: { series: true, pool: true, posts: true, pages: false },
+  homepage: 'gallery',
+  nav: 'default',
+};
+
+function typeOn(type) {
+  return Boolean(siteConfig.contentTypes && siteConfig.contentTypes[type]);
+}
+
+function firstEnabledTab() {
+  if (typeOn('series')) return 'series';
+  if (typeOn('posts')) return 'posts';
+  if (typeOn('pool')) return 'pool';
+  return 'series';
+}
+
+function applySiteConfig() {
+  const series = typeOn('series');
+  const postsOn = typeOn('posts');
+  const pool = typeOn('pool');
+  document.getElementById('tab-btn-series').classList.toggle('hidden', !series);
+  document.getElementById('tab-btn-posts').classList.toggle('hidden', !postsOn);
+  document.getElementById('tab-btn-pool').classList.toggle('hidden', !pool);
+  document.getElementById('tab-series').classList.toggle('hidden', !series);
+  document.getElementById('tab-bar')?.classList.toggle('hidden', [series, postsOn, pool].filter(Boolean).length < 2);
+}
 
 // ── Init ─────────────────────────────────────────────────────────
-loadProjects();
-refreshStagingStatus();
-syncDeployStatus();
-loadVersion();
+boot();
+
+async function boot() {
+  try {
+    siteConfig = await api('GET', '/config');
+  } catch (_) {}
+  applySiteConfig();
+  const tab = firstEnabledTab();
+  switchTab(tab);
+  if (typeOn('series')) loadProjects();
+  refreshStagingStatus();
+  syncDeployStatus();
+  loadVersion();
+}
 
 async function loadVersion() {
   try {
@@ -841,6 +878,9 @@ async function loadVersion() {
 
 // ── Tab switching ─────────────────────────────────────────────────
 function switchTab(tab) {
+  if (tab === 'series' && !typeOn('series')) tab = firstEnabledTab();
+  if (tab === 'posts' && !typeOn('posts')) tab = firstEnabledTab();
+  if (tab === 'pool' && !typeOn('pool')) tab = firstEnabledTab();
   currentTab = tab;
   document.getElementById('tab-series').classList.toggle('hidden', tab !== 'series');
   document.getElementById('tab-posts').classList.toggle('hidden', tab !== 'posts');
@@ -849,17 +889,17 @@ function switchTab(tab) {
   document.getElementById('tab-btn-posts').classList.toggle('active', tab === 'posts');
   document.getElementById('tab-btn-pool').classList.toggle('active', tab === 'pool');
   const newBtn = document.getElementById('btn-new');
-  newBtn.style.display = tab === 'pool' ? 'none' : '';
+  const canCreate = (tab === 'series' && typeOn('series')) || (tab === 'posts' && typeOn('posts'));
+  newBtn.style.display = canCreate ? '' : 'none';
   newBtn.textContent = tab === 'series' ? '+ New Series' : '+ New Post';
-  // Hide pool move bar when leaving pool tab
   if (tab !== 'pool') document.getElementById('pool-move-bar').classList.add('hidden');
   if (tab === 'posts') loadPostsList();
   if (tab === 'pool') loadPool();
 }
 
 function onNew() {
-  if (currentTab === 'series') openNewProject();
-  else openNewPost();
+  if (currentTab === 'series' && typeOn('series')) openNewProject();
+  else if (currentTab === 'posts' && typeOn('posts')) openNewPost();
 }
 
 // ── API ──────────────────────────────────────────────────────────

@@ -153,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.2.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.3.0**
 
 ---
 
@@ -268,6 +268,7 @@ featured: []          # ordered list of { type: "series"|"post"|"photo", slug, l
 | DELETE | `/api/posts/:slug` | Delete post |
 | POST | `/api/posts/:slug/publish` | Toggle draft `{ draft: bool }` |
 | GET | `/api/version` | Returns `{ version }` from `PACKAGE_VERSION` env var |
+| GET | `/api/config` | Site identity from `site/data/basalt.yaml` — `{ contentTypes, homepage, nav }` |
 | GET | `/api/staging` | Returns `{ files, deletions }` counts of `_pending/` entries; admin rebuild bar uses this on load |
 | POST | `/api/pool` | Drop raw photos instantly `multipart/form-data photos[]` → ORIGINALS_BUCKET `_pool/raw/<pid>/` — no resize |
 | GET | `/api/pool` | List pool `{ raw: [...], processed: [...] }` — raw from R2 list, processed from pool manifest |
@@ -338,7 +339,12 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-09-08)
 
-### v0.2.0 — CURRENT
+### v0.3.0 — CURRENT
+- Site identity config `site/data/basalt.yaml` (`contentTypes`, `homepage`, `nav`). Admin tabs and API routes follow it. Hugo reads `.Site.Data.basalt`.
+- Default theme can be overlaid (`theme = ["site", "basalt"]`). Blog example: `examples/blog/basalt.yaml`.
+- `pages` / `splash` / `nav: configurable` are reserved in the schema; not implemented in the engine yet.
+
+### v0.2.0
 - Synced CMS layer from static-photos **v1.6.0**: photo pool, random series slugs, crash-safe publish, admin mobile chrome, env-driven CDN purge (`PUBLIC_ORIGIN`), live Pages deploy-status in the Rebuild bar, GitHub read fallbacks, and settings-write hardening.
 - `DEPLOY_HOOK_URL` is a Pages secret only — do not put it in `wrangler.toml [vars]`.
 - Tailwind content paths now scan `site/themes/basalt/` (was still pointing at `gallery`).
