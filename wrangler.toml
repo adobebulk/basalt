@@ -12,7 +12,7 @@ pages_build_output_dir = "site/public"
 [vars]
 HUGO_VERSION = "0.161.1"
 # Keep in sync with package.json version
-PACKAGE_VERSION = "0.3.0",
+PACKAGE_VERSION = "0.4.0",,
 GITHUB_REPO = "adobebulk/basalt"
 ASSETS_R2_PUBLIC_URL = "https://r2.example.com"
 PUBLIC_ORIGIN = "https://example.com"

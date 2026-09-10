@@ -4,7 +4,7 @@ Basalt is a generic Hugo CMS built on the static-photos infrastructure.
 It supports multiple content types out of the box and is designed to be
 the CMS backbone for any Hugo-based site.
 
-**Version:** 0.3.0  
+**Version:** 0.4.0  
 **Repo:** https://github.com/adobebulk/basalt  
 
 Basalt is the **engine**. A live site is an **instance**: its own GitHub repo,
@@ -47,7 +47,7 @@ without removing or renaming existing ones (backward compatibility with static-p
 | Photo series | `/api/projects/*` | `site/content/projects/` | Full image pipeline (resize, R2, AVIF/JPEG) |
 | Photo pool | `/api/pool/*` | `site/content/projects/_pool/` | Bulk drop + process; never published. Requires series. |
 | Text posts | `/api/posts/*` | `site/content/posts/` | Pure markdown, no images required |
-| Pages | `/api/pages/*` | `site/content/pages/` | Reserved in config (`pages: true`). Not in the engine yet. |
+| Pages | `/api/pages/*` | `site/content/pages/` | Subpages at `/:slug/`. Admin Pages tab. |
 
 Enable or disable types in `site/data/basalt.yaml`. The admin hides tabs for
 disabled types; the API returns 404. Hugo reads the same file as `.Site.Data.basalt`.
@@ -58,11 +58,17 @@ contentTypes:
   pool: true
   posts: true
   pages: false
-homepage: gallery    # gallery | posts | splash (splash reserved)
-nav: default         # default | configurable (configurable reserved)
+homepage: gallery    # gallery | posts | splash (splash does not require pages)
+nav: default         # default | configurable (navbar editor only when configurable)
 ```
 
-A blog instance is `examples/blog/basalt.yaml` (`posts` only, `homepage: posts`).
+Recipes in `examples/`:
+
+| Instance | File | Admin |
+|---|---|---|
+| Photos | `examples/photos/basalt.yaml` | Series, Posts, Pool |
+| Website | `examples/website/basalt.yaml` | Pages (splash + subpages + navbar), Posts |
+| Blog | `examples/blog/basalt.yaml` | Posts only |
 
 ---
 
@@ -110,7 +116,7 @@ are included in the CSS build. Do not fork `functions/` or `admin/` in the insta
 
 Source of truth is `package.json`. Keep `wrangler.toml [vars] PACKAGE_VERSION` in sync.
 Minor bump for new content types or features; patch for fixes.
-Current: **0.3.0**
+Current: **0.4.0**
 
 This repo is the CMS source of truth. Live sites (`static-photos`, `ctsmith-org`,
 future blog) consume it; they are not upstream.

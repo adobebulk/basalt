@@ -153,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.3.0**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.4.0**
 
 ---
 
@@ -269,6 +269,14 @@ featured: []          # ordered list of { type: "series"|"post"|"photo", slug, l
 | POST | `/api/posts/:slug/publish` | Toggle draft `{ draft: bool }` |
 | GET | `/api/version` | Returns `{ version }` from `PACKAGE_VERSION` env var |
 | GET | `/api/config` | Site identity from `site/data/basalt.yaml` — `{ contentTypes, homepage, nav }` |
+| GET | `/api/home` | Splash homepage `{ title, tagline, body }` (when splash/pages enabled) |
+| PATCH | `/api/home` | Update splash homepage |
+| GET | `/api/pages` | List subpages |
+| POST | `/api/pages` | Create page |
+| GET | `/api/pages/:slug` | Get one page |
+| PATCH | `/api/pages/:slug` | Update page |
+| DELETE | `/api/pages/:slug` | Delete page (also strips it from `settings.nav`) |
+| POST | `/api/pages/:slug/publish` | Toggle `{ draft }` |
 | GET | `/api/staging` | Returns `{ files, deletions }` counts of `_pending/` entries; admin rebuild bar uses this on load |
 | POST | `/api/pool` | Drop raw photos instantly `multipart/form-data photos[]` → ORIGINALS_BUCKET `_pool/raw/<pid>/` — no resize |
 | GET | `/api/pool` | List pool `{ raw: [...], processed: [...] }` — raw from R2 list, processed from pool manifest |
@@ -339,7 +347,10 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ## Current state (last updated: 2026-09-08)
 
-### v0.3.0 — CURRENT
+### v0.4.0 — CURRENT
+- Pages, splash homepage, and configurable navbar are in the engine, gated by `site/data/basalt.yaml`. Recipes: `examples/photos`, `examples/website`, `examples/blog`.
+
+### v0.3.0
 - Site identity config `site/data/basalt.yaml` (`contentTypes`, `homepage`, `nav`). Admin tabs/actions and API routes follow it. Hugo uses `partials/basalt-config.html` (same normalization as `functions/_lib/config.js`).
 - Default theme can be overlaid (`theme = ["site", "basalt"]`). Blog example: `examples/blog/basalt.yaml`.
 - `pages` / `splash` / `nav: configurable` are reserved in the schema; not implemented in the engine yet.

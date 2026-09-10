@@ -1,0 +1,42 @@
+{{- $s := .Site.Data.settings -}}
+{{- $b := partial "basalt-config.html" . -}}
+{{- $types := $b.contentTypes -}}
+<nav class="flex gap-6 text-sm text-stone-400">
+{{- if and (eq $b.nav "configurable") (isset $s "nav") -}}
+  {{- range $s.nav -}}
+    {{- if eq .type "page" -}}
+      {{- $p := site.GetPage (printf "/pages/%s" .slug) -}}
+      {{- if and $p (not $p.Params.draft) -}}
+        <a href="{{ $p.RelPermalink }}" class="hover:text-stone-900 transition-colors">{{ if .label }}{{ .label }}{{ else }}{{ $p.Title }}{{ end }}</a>
+      {{- end -}}
+    {{- else if eq .type "link" -}}
+      {{- if and .label .url -}}
+        <a href="{{ .url }}" class="hover:text-stone-900 transition-colors"{{ if or (hasPrefix .url "http://") (hasPrefix .url "https://") }} rel="noopener noreferrer"{{ end }}>{{ .label }}</a>
+      {{- end -}}
+    {{- else if and (eq .type "series") $types.series -}}
+      <a href="{{ "/projects/" | relURL }}" class="hover:text-stone-900 transition-colors">{{ if .label }}{{ .label }}{{ else }}{{ $s.navLabel | default "Series" }}{{ end }}</a>
+    {{- end -}}
+  {{- end -}}
+{{- else -}}
+  {{- if $types.pages -}}
+    {{- $section := site.GetPage "/pages" -}}
+    {{- with $section -}}
+      {{- $navPages := where (where .RegularPages "Params.draft" "ne" true) "Params.nav" true -}}
+      {{- range sort $navPages "Params.weight" "asc" -}}
+        <a href="{{ .RelPermalink }}" class="hover:text-stone-900 transition-colors">{{ .Title }}</a>
+      {{- end -}}
+    {{- end -}}
+  {{- end -}}
+  {{- range $s.navLinks -}}
+    {{- if and .label .url -}}
+      <a href="{{ .url }}" class="hover:text-stone-900 transition-colors"{{ if or (hasPrefix .url "http://") (hasPrefix .url "https://") }} rel="noopener noreferrer"{{ end }}>{{ .label }}</a>
+    {{- end -}}
+  {{- end -}}
+  {{- if $types.series -}}
+  <a href="{{ "/projects/" | relURL }}" class="hover:text-stone-900 transition-colors">{{ $s.navLabel | default "Work" }}</a>
+  {{- end -}}
+  {{- if $types.posts -}}
+  <a href="{{ "/posts/" | relURL }}" class="hover:text-stone-900 transition-colors">{{ if $types.series }}Posts{{ else }}{{ $s.navLabel | default "Posts" }}{{ end }}</a>
+  {{- end -}}
+{{- end -}}
+</nav>

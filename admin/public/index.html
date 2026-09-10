@@ -571,10 +571,55 @@
 
   <!-- Tab bar -->
   <div class="tab-bar" id="tab-bar">
+    <button class="tab-btn hidden" id="tab-btn-pages" onclick="switchTab('pages')">Pages</button>
     <button class="tab-btn active" id="tab-btn-series" onclick="switchTab('series')">Series</button>
     <button class="tab-btn" id="tab-btn-posts" onclick="switchTab('posts')">Posts</button>
     <button class="tab-btn" id="tab-btn-pool" onclick="switchTab('pool')">Pool</button>
   </div>
+  </div>
+
+  <!-- Pages tab -->
+  <div id="tab-pages" class="hidden">
+    <div class="section-head" style="margin-bottom:12px">
+      <h2>Pages</h2>
+    </div>
+    <div class="post-card" id="home-editor-card" style="margin-bottom:10px">
+      <div class="post-card-info">
+        <div class="post-card-title">Homepage</div>
+        <div class="post-card-meta">
+          <span>/</span>
+          <span class="badge badge-live">Live</span>
+          <span>Splash name + tagline</span>
+        </div>
+      </div>
+      <div class="post-card-actions">
+        <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditHome()">Edit</button>
+      </div>
+    </div>
+    <div id="pages-list" style="display:flex;flex-direction:column;gap:6px">
+      <div class="empty" style="border:1px solid var(--border-light)">Loading…</div>
+    </div>
+
+    <div id="nav-editor-wrap">
+    <div class="section-head" style="margin:28px 0 12px">
+      <h2>Navbar</h2>
+    </div>
+    <p class="field-hint" style="margin:0 0 12px">Public navbar order and labels. The Nav badge on a page matches this list. Rebuild to publish.</p>
+    <div id="nav-items-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+      <div class="empty" style="border:1px solid var(--border-light)">Loading…</div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <select id="nav-add-page" style="font-family:var(--mono);font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:2px;background:var(--bg);color:var(--text);min-width:160px">
+        <option value="">Add a page…</option>
+      </select>
+      <button class="btn-outline" onclick="addNavPage()">Add page</button>
+      <button class="btn-outline" onclick="openEditNavItem(-1)">+ Link</button>
+      <button class="btn-outline" id="nav-add-series-btn" onclick="addNavSeries()">+ Series</button>
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn-action" onclick="saveNav()">Save navbar →</button>
+    </div>
+    </div>
   </div>
 
   <!-- Series tab -->
@@ -710,6 +755,93 @@
   </div>
 </div>
 
+<!-- ── Homepage editor ──────────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-home" onclick="closeIfBackdrop(event,'overlay-home')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title">Edit homepage</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-home')">Close <span class="esc-hint">[esc]</span></button>
+    </div>
+    <div class="sheet-body">
+      <p class="field-hint" style="margin-top:0">Public splash: name and tagline. Optional markdown body below.</p>
+      <div class="field">
+        <label>Name *</label>
+        <input type="text" id="home-title" placeholder="Site name" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Tagline</label>
+        <input type="text" id="home-tagline" placeholder="Tagline" autocomplete="off">
+      </div>
+      <div class="field">
+        <div class="post-body-head">
+          <label style="margin-bottom:0">Body (markdown, optional)</label>
+          <button class="btn-outline" id="btn-insert-photo-home" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker('home-body')">⊕ Insert photo</button>
+        </div>
+        <textarea id="home-body" rows="8" style="min-height:160px" placeholder="Optional text below the splash. Markdown."></textarea>
+      </div>
+      <div>
+        <button class="btn-action" onclick="saveHome()">Save homepage →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── New / Edit page sheet ─────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-page" onclick="closeIfBackdrop(event,'overlay-page')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title" id="page-sheet-title">New page</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-page')">Close <span class="esc-hint">[esc]</span></button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Title *</label>
+        <input type="text" id="page-title" placeholder="e.g. About" autocomplete="off">
+      </div>
+      <div class="field">
+        <div class="post-body-head">
+          <label style="margin-bottom:0">Body (markdown)</label>
+          <button class="btn-outline" id="btn-insert-photo-page" style="font-size:11px;padding:3px 8px" onclick="openPhotoPicker('page-body')">⊕ Insert photo</button>
+        </div>
+        <textarea id="page-body" rows="12" style="min-height:220px" placeholder="Write this page in markdown…"></textarea>
+      </div>
+      <p class="field-hint">Add this page to the public navbar in the Navbar section on Pages.</p>
+      <div class="field-check">
+        <input type="checkbox" id="page-draft" checked>
+        <label for="page-draft">Draft — hide from public site</label>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-action" onclick="savePage()">Save page →</button>
+        <button class="btn-outline" id="page-delete-btn" onclick="deletePage()" style="display:none">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Edit navbar item ──────────────────────────────────────── -->
+<div class="overlay hidden" id="overlay-nav-item" onclick="closeIfBackdrop(event,'overlay-nav-item')">
+  <div class="sheet">
+    <div class="sheet-header">
+      <span class="sheet-title" id="nav-item-sheet-title">Navbar item</span>
+      <button class="sheet-close" onclick="closeSheet('overlay-nav-item')">Close <span class="esc-hint">[esc]</span></button>
+    </div>
+    <div class="sheet-body">
+      <div class="field">
+        <label>Label *</label>
+        <input type="text" id="nav-item-label" placeholder="Photos" autocomplete="off">
+      </div>
+      <div class="field" id="nav-item-url-field">
+        <label>URL *</label>
+        <input type="text" id="nav-item-url" placeholder="https://example.com" autocomplete="off">
+      </div>
+      <p class="field-hint" id="nav-item-hint"></p>
+      <div>
+        <button class="btn-action" onclick="saveNavItemSheet()">Save →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- ── Site Settings sheet ───────────────────────────────────── -->
 <div class="overlay hidden" id="overlay-settings" onclick="closeIfBackdrop(event,'overlay-settings')">
   <div class="sheet">
@@ -819,9 +951,15 @@
 // ── State ────────────────────────────────────────────────────────
 let projects      = [];
 let posts         = [];
+let pages         = [];
 let currentTab    = 'series';
 let editingPost   = null;
+let editingPage   = null;
+let photoPickerTarget = 'post-body';
 let featuredItems = [];
+let navItems      = [];
+let navPagesCache = [];
+let editingNavIdx = -1;
 let panelSettings = {}; // cached per-panel settings (series detail)
 let sheetStack    = [];
 let siteConfig    = {
@@ -834,7 +972,16 @@ function typeOn(type) {
   return Boolean(siteConfig.contentTypes && siteConfig.contentTypes[type]);
 }
 
+function pagesUiOn() {
+  return typeOn('pages') || siteConfig.homepage === 'splash' || siteConfig.nav === 'configurable';
+}
+
+function navUiOn() {
+  return siteConfig.nav === 'configurable';
+}
+
 function firstEnabledTab() {
+  if (pagesUiOn()) return 'pages';
   if (typeOn('series')) return 'series';
   if (typeOn('posts')) return 'posts';
   if (typeOn('pool')) return 'pool';
@@ -845,13 +992,25 @@ function applySiteConfig() {
   const series = typeOn('series');
   const postsOn = typeOn('posts');
   const pool = typeOn('pool');
+  const pagesOn = pagesUiOn();
+  document.getElementById('tab-btn-pages').classList.toggle('hidden', !pagesOn);
   document.getElementById('tab-btn-series').classList.toggle('hidden', !series);
   document.getElementById('tab-btn-posts').classList.toggle('hidden', !postsOn);
   document.getElementById('tab-btn-pool').classList.toggle('hidden', !pool);
+  document.getElementById('tab-pages').classList.toggle('hidden', !pagesOn);
   document.getElementById('tab-series').classList.toggle('hidden', !series);
-  document.getElementById('tab-bar')?.classList.toggle('hidden', [series, postsOn, pool].filter(Boolean).length < 2);
-  const insertBtn = document.getElementById('btn-insert-photo');
-  if (insertBtn) insertBtn.classList.toggle('hidden', !series && !pool);
+  const tabCount = [pagesOn, series, postsOn, pool].filter(Boolean).length;
+  document.getElementById('tab-bar')?.classList.toggle('hidden', tabCount < 2);
+  const homeCard = document.getElementById('home-editor-card');
+  if (homeCard) homeCard.classList.toggle('hidden', siteConfig.homepage !== 'splash');
+  const navWrap = document.getElementById('nav-editor-wrap');
+  if (navWrap) navWrap.classList.toggle('hidden', !navUiOn());
+  const seriesNavBtn = document.getElementById('nav-add-series-btn');
+  if (seriesNavBtn) seriesNavBtn.classList.toggle('hidden', !series);
+  ['btn-insert-photo', 'btn-insert-photo-home', 'btn-insert-photo-page'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.classList.toggle('hidden', !series && !pool);
+  });
   const featType = document.getElementById('feat-type');
   if (featType) {
     [...featType.options].forEach((opt) => {
@@ -890,27 +1049,37 @@ async function loadVersion() {
 
 // ── Tab switching ─────────────────────────────────────────────────
 function switchTab(tab) {
+  if (tab === 'pages' && !pagesUiOn()) tab = firstEnabledTab();
   if (tab === 'series' && !typeOn('series')) tab = firstEnabledTab();
   if (tab === 'posts' && !typeOn('posts')) tab = firstEnabledTab();
   if (tab === 'pool' && !typeOn('pool')) tab = firstEnabledTab();
   currentTab = tab;
+  document.getElementById('tab-pages').classList.toggle('hidden', tab !== 'pages');
   document.getElementById('tab-series').classList.toggle('hidden', tab !== 'series');
   document.getElementById('tab-posts').classList.toggle('hidden', tab !== 'posts');
   document.getElementById('tab-pool').classList.toggle('hidden', tab !== 'pool');
+  document.getElementById('tab-btn-pages').classList.toggle('active', tab === 'pages');
   document.getElementById('tab-btn-series').classList.toggle('active', tab === 'series');
   document.getElementById('tab-btn-posts').classList.toggle('active', tab === 'posts');
   document.getElementById('tab-btn-pool').classList.toggle('active', tab === 'pool');
   const newBtn = document.getElementById('btn-new');
-  const canCreate = (tab === 'series' && typeOn('series')) || (tab === 'posts' && typeOn('posts'));
+  const canCreate = (tab === 'pages' && typeOn('pages'))
+    || (tab === 'series' && typeOn('series'))
+    || (tab === 'posts' && typeOn('posts'));
   newBtn.style.display = canCreate ? '' : 'none';
-  newBtn.textContent = tab === 'series' ? '+ New Series' : '+ New Post';
+  newBtn.textContent = tab === 'pages' ? '+ New page'
+    : tab === 'series' ? '+ New Series'
+    : '+ New Post';
   if (tab !== 'pool') document.getElementById('pool-move-bar').classList.add('hidden');
+  if (tab === 'pages') loadPagesList();
   if (tab === 'posts') loadPostsList();
   if (tab === 'pool') loadPool();
+  if (tab === 'series') loadProjects();
 }
 
 function onNew() {
-  if (currentTab === 'series' && typeOn('series')) openNewProject();
+  if (currentTab === 'pages' && typeOn('pages')) openNewPage();
+  else if (currentTab === 'series' && typeOn('series')) openNewProject();
   else if (currentTab === 'posts' && typeOn('posts')) openNewPost();
 }
 
@@ -1469,6 +1638,347 @@ async function deleteSeries(slug) {
   } catch(e) { toast('Delete failed: ' + e.message, true); }
 }
 
+// ── Pages + homepage + navbar ─────────────────────────────────────
+function pageIsInNav(slug) {
+  return navItems.some(i => i.type === 'page' && i.slug === slug);
+}
+
+async function loadPagesList() {
+  const container = document.getElementById('pages-list');
+  if (!container) return;
+  container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Loading…</div>`;
+  try {
+    if (navUiOn()) await loadNavEditor();
+    else {
+      navPagesCache = typeOn('pages') ? await api('GET', '/pages') : [];
+      navItems = [];
+    }
+    pages = navPagesCache;
+    renderPagesList();
+  } catch (e) {
+    container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Failed to load — ${esc(e.message)}</div>`;
+    toast('Failed to load pages: ' + e.message, true);
+  }
+}
+
+function renderPagesList() {
+  const container = document.getElementById('pages-list');
+  if (!container) return;
+  if (!typeOn('pages')) {
+    container.innerHTML = '';
+    return;
+  }
+  if (!pages.length) {
+    container.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">No subpages yet — click "+ New page".</div>`;
+    return;
+  }
+  container.innerHTML = pages.map(p => `
+    <div class="post-card">
+      <div class="post-card-info">
+        <div class="post-card-title">${esc(p.title)}</div>
+        <div class="post-card-meta">
+          <span>/${esc(p.slug)}/</span>
+          ${p.draft ? `<span class="badge badge-draft">Draft</span>` : `<span class="badge badge-live">Live</span>`}
+          ${pageIsInNav(p.slug) && !p.draft ? `<span class="badge badge-featured">Nav</span>` : ''}
+        </div>
+      </div>
+      <div class="post-card-actions">
+        <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPage('${esc(p.slug)}')">Edit</button>
+        <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePagePublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="${onclickHandler('confirmDeletePage', p.slug, p.title)}">Del</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function openEditHome() {
+  openSheet('overlay-home');
+  try {
+    const h = await api('GET', '/home');
+    document.getElementById('home-title').value = h.title || '';
+    document.getElementById('home-tagline').value = h.tagline || '';
+    document.getElementById('home-body').value = h.body || '';
+  } catch (e) {
+    toast('Failed to load homepage: ' + e.message, true);
+  }
+}
+
+async function saveHome() {
+  const title = document.getElementById('home-title').value.trim();
+  const tagline = document.getElementById('home-tagline').value.trim();
+  const body = document.getElementById('home-body').value;
+  if (!title) { toast('Name is required', true); return; }
+  try {
+    await api('PATCH', '/home', { title, tagline, body });
+    closeSheet('overlay-home');
+    await refreshStagingStatus();
+    toast('Homepage saved — rebuild to publish');
+  } catch (e) {
+    toast('Save failed: ' + e.message, true);
+  }
+}
+
+function openNewPage() {
+  editingPage = null;
+  document.getElementById('page-sheet-title').textContent = 'New page';
+  document.getElementById('page-title').value = '';
+  document.getElementById('page-body').value = '';
+  document.getElementById('page-draft').checked = true;
+  document.getElementById('page-delete-btn').style.display = 'none';
+  openSheet('overlay-page');
+  setTimeout(() => document.getElementById('page-title').focus(), 150);
+}
+
+async function openEditPage(slug) {
+  editingPage = slug;
+  document.getElementById('page-sheet-title').textContent = 'Edit page';
+  document.getElementById('page-delete-btn').style.display = '';
+  openSheet('overlay-page');
+  try {
+    const p = await api('GET', `/pages/${slug}`);
+    document.getElementById('page-title').value = p.title || '';
+    document.getElementById('page-body').value = p.body || '';
+    document.getElementById('page-draft').checked = !!p.draft;
+  } catch (e) {
+    toast('Failed to load page: ' + e.message, true);
+  }
+}
+
+async function savePage() {
+  const title = document.getElementById('page-title').value.trim();
+  const body = document.getElementById('page-body').value;
+  const draft = document.getElementById('page-draft').checked;
+  if (!title) { toast('Title is required', true); return; }
+  try {
+    if (!editingPage) {
+      await api('POST', '/pages', { title, body, draft });
+      toast(draft ? `Page "${title}" created as a draft` : `Page "${title}" created`);
+    } else {
+      await api('PATCH', `/pages/${editingPage}`, { title, body, draft });
+      toast('Page saved');
+    }
+    closeSheet('overlay-page');
+    await refreshStagingStatus();
+    await loadPagesList();
+  } catch (e) {
+    toast('Save failed: ' + e.message, true);
+  }
+}
+
+async function togglePagePublish(slug, isDraft) {
+  try {
+    await api('POST', `/pages/${slug}/publish`, { draft: !isDraft });
+    await refreshStagingStatus();
+    toast(isDraft ? 'Page published' : 'Page moved to draft');
+    await loadPagesList();
+  } catch (e) {
+    toast('Failed: ' + e.message, true);
+  }
+}
+
+async function confirmDeletePage(slug, title) {
+  if (!confirm(`Delete page "${title}"? This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/pages/${slug}`);
+    await removePageFromSavedNav(slug);
+    await refreshStagingStatus();
+    toast(`Deleted "${title}"`);
+    await loadPagesList();
+  } catch (e) {
+    toast('Delete failed: ' + e.message, true);
+  }
+}
+
+async function deletePage() {
+  if (!editingPage) return;
+  const title = document.getElementById('page-title').value || editingPage;
+  if (!confirm(`Delete page "${title}"? This cannot be undone.`)) return;
+  try {
+    await api('DELETE', `/pages/${editingPage}`);
+    await removePageFromSavedNav(editingPage);
+    closeSheet('overlay-page');
+    await refreshStagingStatus();
+    toast(`Deleted "${title}"`);
+    await loadPagesList();
+  } catch (e) {
+    toast('Delete failed: ' + e.message, true);
+  }
+}
+
+function navItemTitle(item) {
+  if (item.type === 'page') {
+    const p = navPagesCache.find(x => x.slug === item.slug);
+    const fallback = p ? p.title : item.slug;
+    return item.label || fallback;
+  }
+  if (item.type === 'series') return item.label || 'Series';
+  return item.label || item.url || 'Link';
+}
+
+function renderNavEditor() {
+  const list = document.getElementById('nav-items-list');
+  if (!list) return;
+  const seriesBtn = document.getElementById('nav-add-series-btn');
+  const hasSeries = navItems.some(i => i.type === 'series');
+  if (seriesBtn) seriesBtn.style.display = (!typeOn('series') || hasSeries) ? 'none' : '';
+  const used = new Set(navItems.filter(i => i.type === 'page').map(i => i.slug));
+  const sel = document.getElementById('nav-add-page');
+  if (sel) {
+    sel.innerHTML = '<option value="">Add a page…</option>';
+    navPagesCache.forEach(p => {
+      if (used.has(p.slug)) return;
+      const opt = document.createElement('option');
+      opt.value = p.slug;
+      opt.textContent = p.draft ? `${p.title} (draft)` : p.title;
+      sel.appendChild(opt);
+    });
+  }
+  if (!navItems.length) {
+    list.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Empty navbar — add a page, link, or Series.</div>`;
+    return;
+  }
+  list.innerHTML = navItems.map((item, idx) => {
+    const badge = item.type === 'page' ? 'page' : item.type === 'series' ? 'series' : 'link';
+    const meta = item.type === 'page' ? `/${esc(item.slug)}/` : item.type === 'link' ? esc(item.url) : '/projects/';
+    return `
+      <div class="post-card">
+        <div class="post-card-info">
+          <div class="post-card-title">${esc(navItemTitle(item))}</div>
+          <div class="post-card-meta"><span class="badge">${badge}</span><span>${meta}</span></div>
+        </div>
+        <div class="post-card-actions">
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditNavItem(${idx})">Edit</button>
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px" ${idx === 0 ? 'disabled' : ''} onclick="moveNavItem(${idx},-1)">▲</button>
+          <button class="btn-outline" style="font-size:11px;padding:3px 8px" ${idx === navItems.length-1 ? 'disabled' : ''} onclick="moveNavItem(${idx},1)">▼</button>
+          <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="removeNavItem(${idx})">✕</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function loadNavEditor() {
+  const list = document.getElementById('nav-items-list');
+  if (list) list.innerHTML = `<div class="empty" style="border:1px solid var(--border-light)">Loading…</div>`;
+  const [s, pageList] = await Promise.all([
+    api('GET', '/settings'),
+    typeOn('pages') ? api('GET', '/pages') : Promise.resolve([]),
+  ]);
+  navPagesCache = pageList || [];
+  if (Array.isArray(s.nav)) {
+    navItems = s.nav.map(i => ({...i}));
+  } else {
+    const pageItems = navPagesCache
+      .filter(p => p.nav !== false && !p.draft)
+      .sort((a, b) => (a.weight || 0) - (b.weight || 0))
+      .map(p => ({ type: 'page', slug: p.slug, label: '' }));
+    const linkItems = Array.isArray(s.navLinks) ? s.navLinks.map(l => ({ type: 'link', label: l.label, url: l.url })) : [];
+    const seriesItem = typeOn('series') ? [{ type: 'series', label: s.navLabel || '' }] : [];
+    navItems = [...pageItems, ...linkItems, ...seriesItem];
+  }
+  renderNavEditor();
+}
+
+function addNavPage() {
+  const slug = document.getElementById('nav-add-page').value;
+  if (!slug) { toast('Pick a page', true); return; }
+  if (navItems.some(i => i.type === 'page' && i.slug === slug)) return;
+  navItems.push({ type: 'page', slug, label: '' });
+  renderNavEditor();
+  renderPagesList();
+}
+
+function addNavSeries() {
+  if (!typeOn('series')) return;
+  if (navItems.some(i => i.type === 'series')) return;
+  navItems.push({ type: 'series', label: '' });
+  renderNavEditor();
+}
+
+function removeNavItem(idx) {
+  navItems.splice(idx, 1);
+  renderNavEditor();
+  renderPagesList();
+}
+
+function moveNavItem(idx, dir) {
+  const ni = idx + dir;
+  if (ni < 0 || ni >= navItems.length) return;
+  [navItems[idx], navItems[ni]] = [navItems[ni], navItems[idx]];
+  renderNavEditor();
+}
+
+function openEditNavItem(idx) {
+  editingNavIdx = idx;
+  const isNew = idx < 0;
+  const item = isNew ? { type: 'link', label: '', url: '' } : navItems[idx];
+  document.getElementById('nav-item-sheet-title').textContent = isNew ? 'New link' : 'Edit navbar item';
+  document.getElementById('nav-item-label').value = item.label || (item.type === 'page' ? navItemTitle(item) : '') || '';
+  const urlField = document.getElementById('nav-item-url-field');
+  const hint = document.getElementById('nav-item-hint');
+  if (item.type === 'link' || isNew) {
+    urlField.style.display = '';
+    document.getElementById('nav-item-url').value = item.url || '';
+    hint.textContent = 'https://, http://, or a path starting with /';
+  } else {
+    urlField.style.display = 'none';
+    hint.textContent = item.type === 'page'
+      ? 'Leave blank to use the page title.'
+      : 'Leave blank to use the Series nav label from Settings.';
+  }
+  openSheet('overlay-nav-item');
+}
+
+function saveNavItemSheet() {
+  const label = document.getElementById('nav-item-label').value.trim();
+  if (editingNavIdx < 0) {
+    const url = document.getElementById('nav-item-url').value.trim();
+    if (!label) { toast('Label is required', true); return; }
+    if (!/^(https?:\/\/|\/)/i.test(url) || /^javascript:/i.test(url)) {
+      toast('URL must start with https://, http://, or /', true);
+      return;
+    }
+    navItems.push({ type: 'link', label, url });
+  } else {
+    const item = navItems[editingNavIdx];
+    if (item.type === 'link') {
+      const url = document.getElementById('nav-item-url').value.trim();
+      if (!label) { toast('Label is required', true); return; }
+      if (!/^(https?:\/\/|\/)/i.test(url) || /^javascript:/i.test(url)) {
+        toast('URL must start with https://, http://, or /', true);
+        return;
+      }
+      item.label = label;
+      item.url = url;
+    } else {
+      item.label = label;
+    }
+  }
+  closeSheet('overlay-nav-item');
+  renderNavEditor();
+  renderPagesList();
+}
+
+async function saveNav() {
+  try {
+    await api('PATCH', '/settings', { nav: navItems });
+    renderPagesList();
+    await refreshStagingStatus();
+    toast('Navbar saved — rebuild to publish');
+  } catch (e) {
+    toast('Save failed: ' + e.message, true);
+  }
+}
+
+async function removePageFromSavedNav(slug) {
+  try {
+    const s = await api('GET', '/settings');
+    if (!Array.isArray(s.nav)) return;
+    const next = s.nav.filter(i => !(i.type === 'page' && i.slug === slug));
+    if (next.length !== s.nav.length) await api('PATCH', '/settings', { nav: next });
+    navItems = navItems.filter(i => !(i.type === 'page' && i.slug === slug));
+  } catch (_) {}
+}
+
 // ── Posts ─────────────────────────────────────────────────────────
 let postsFeaturedSlugs = new Set(); // slugs currently in settings.featured[] with type=post
 
@@ -1509,7 +2019,7 @@ function renderPostsList() {
       <div class="post-card-actions">
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="openEditPost('${esc(p.slug)}')">Edit</button>
         <button class="btn-outline" style="font-size:11px;padding:3px 8px" onclick="togglePostPublish('${esc(p.slug)}',${p.draft})">${p.draft ? 'Publish' : 'Unpublish'}</button>
-        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="confirmDeletePost(${jsString(p.slug)},${jsString(p.title)})">Del</button>
+        <button class="btn-danger" style="font-size:11px;padding:3px 8px" onclick="${onclickHandler('confirmDeletePost', p.slug, p.title)}">Del</button>
       </div>
     </div>
   `).join('');
@@ -1627,8 +2137,9 @@ async function deletePost() {
 // ── Photo picker (for post body) ──────────────────────────────────
 let pickerSelectedPhoto = null;
 
-async function openPhotoPicker() {
+async function openPhotoPicker(target) {
   if (!typeOn('series') && !typeOn('pool')) return;
+  photoPickerTarget = target || 'post-body';
   pickerSelectedPhoto = null;
   const btn = document.getElementById('picker-insert-btn');
   btn.disabled = true; btn.style.opacity = '.4'; btn.style.pointerEvents = 'none';
@@ -1710,7 +2221,8 @@ function insertPhotoMarkdown() {
   const url    = `/assets/${photo.key}/${size}.jpg`;
   const md     = `![${alt}](${url})\n`;
 
-  const ta = document.getElementById('post-body');
+  const ta = document.getElementById(photoPickerTarget || 'post-body');
+  if (!ta) return;
   const start = ta.selectionStart;
   const end   = ta.selectionEnd;
   ta.value = ta.value.slice(0, start) + md + ta.value.slice(end);
@@ -2258,6 +2770,10 @@ async function confirmPoolPickerMove() {
 // ── Util ──────────────────────────────────────────────────────────
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s) { return JSON.stringify(String(s)); }
+function onclickHandler(fn, ...args) {
+  const inner = args.map((a) => JSON.stringify(String(a))).join(',');
+  return `${fn}(${inner.replace(/&/g, '&amp;').replace(/"/g, '&quot;')})`;
+}
 </script>
 </body>
 </html>

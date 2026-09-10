@@ -81,6 +81,26 @@ export async function isStagedPostDeleted(bucket, slug) {
   return !!o;
 }
 
+/**
+ * Return slugs of pages staged but not yet in GitHub.
+ * Scans _pending/files/site/content/pages/<slug>/index.md keys.
+ */
+export async function getStagedPageSlugs(bucket) {
+  const objects = await listAll(bucket, { prefix: "_pending/files/site/content/pages/" });
+  const slugs = new Set();
+  for (const { key } of objects) {
+    const m = key.match(/^_pending\/files\/site\/content\/pages\/([^/]+)\/index\.md$/);
+    if (m) slugs.add(m[1]);
+  }
+  return [...slugs];
+}
+
+/** True if the page index.md is staged for deletion. */
+export async function isStagedPageDeleted(bucket, slug) {
+  const o = await bucket.get(`_pending/deletes/site/content/pages/${slug}/index.md`);
+  return !!o;
+}
+
 /** True if the series _index.md is staged for deletion. */
 export async function isStagedDeleted(bucket, slug) {
   const o = await bucket.get(

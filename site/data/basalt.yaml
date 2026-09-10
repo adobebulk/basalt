@@ -5,9 +5,7 @@
 # contentTypes: series, pool, posts, pages
 #   pool requires series (the engine turns pool off if series is off).
 # homepage: gallery | posts | splash
-#   splash is reserved (personal-site homepage); ignored until that kernel lands.
-# nav: default | configurable
-#   configurable is reserved (admin navbar editor); default uses settings.navLabel.
+# nav: default | configurable (admin navbar editor when configurable or pages is on)
 
 contentTypes:
   series: true
