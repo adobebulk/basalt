@@ -25,7 +25,7 @@ import {
   stageFile, stageDelete, readStaged,
   getStagedSlugs, isStagedDeleted, flushStaging,
   getStagedPostSlugs, isStagedPostDeleted, pendingCounts,
-  getStagedPageSlugs, isStagedPageDeleted,
+  getStagedPageSlugs, isStagedPageDeleted, isLive,
 } from "../_lib/staging.js";
 import { HOME_PATH, PAGES_DIR, pagePath, assertPageSlug, pageBody } from "../_lib/pages.js";
 import {
@@ -433,9 +433,11 @@ async function updateManifest(env, slug, mutate, { init } = {}) {
   const path = indexPath(slug);
   const stagedKey = `_pending/files/${path}`;
   for (let attempt = 0; attempt < MANIFEST_CAS_ATTEMPTS; attempt++) {
-    if (await env.stagingBucket.head(`_pending/deletes/${path}`)) return null;
+    if (isLive(await env.stagingBucket.head(`_pending/deletes/${path}`))) return null;
+    // A record Rebuild already published counts as absent (GitHub is current), but
+    // its etag still guards the write so a concurrent writer cannot be overwritten.
     const staged = await env.stagingBucket.get(stagedKey);
-    const content = staged ? await staged.text() : (await githubFileFallback(env, path))?.content;
+    const content = isLive(staged) ? await staged.text() : (await githubFileFallback(env, path))?.content;
     let data, body;
     if (content != null) ({ data, body } = parseFrontMatter(content));
     else if (init) { data = init(); body = ""; }

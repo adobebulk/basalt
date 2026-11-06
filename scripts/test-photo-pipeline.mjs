@@ -48,6 +48,8 @@ function conditionHolds(onlyIf, existing) {
 class Bucket {
   constructor(name) { this.name = name; this.store = new Map(); this.puts = []; }
   async put(key, value, opts = {}) {
+    // Lets a test land a write immediately before Rebuild acknowledges the manifest.
+    if (opts.customMetadata?.published && ackHook && key.endsWith("/_index.md")) { const h = ackHook; ackHook = null; await h(); }
     const bytes = await toBytes(value);
     await tick();
     if (!conditionHolds(opts.onlyIf, this.store.get(key))) return null;
@@ -67,7 +69,11 @@ class Bucket {
   }
   async get(key) { await tick(); const o = this.store.get(key); return o ? this.wrap(key, o) : null; }
   async head(key) { await tick(); const o = this.store.get(key); return o ? { key, etag: o.etag, httpEtag: `"${o.etag}"`, size: o.bytes.length, customMetadata: o.customMetadata } : null; }
-  async delete(keys) { await tick(); for (const k of [].concat(keys)) this.store.delete(k); }
+  async delete(keys) {
+    // Older Rebuilds cleaned up with delete(); fire the same hook there so the test bites them too.
+    if (ackHook && [].concat(keys).some((k) => k.startsWith("_pending/") && k.endsWith("/_index.md"))) { const h = ackHook; ackHook = null; await h(); }
+    await tick(); for (const k of [].concat(keys)) this.store.delete(k);
+  }
   async list({ prefix = "" } = {}) {
     await tick();
     const objects = [...this.store.keys()].filter((k) => k.startsWith(prefix)).sort()
@@ -83,23 +89,42 @@ function jpeg(w, h, tag) {
 const tagOf = (bytes) => { const s = dec.decode(bytes); const i = s.indexOf("TAG:"); return i < 0 ? "?" : s.slice(i + 4); };
 
 let assets, originals, edgeCache, transformLog, purged, failTransform, transformHook;
-let githubMode = false, commitHook = null, committedPaths = [];
+let githubMode = false, commitHook = null, ackHook = null, committedPaths = [], repoFiles = new Map();
 function reset() {
   assets = new Bucket("assets"); originals = new Bucket("originals");
   edgeCache = new Map(); transformLog = []; purged = []; failTransform = false; transformHook = null;
-  githubMode = false; commitHook = null; committedPaths = []; logs.length = 0;
+  githubMode = false; commitHook = null; ackHook = null; committedPaths = []; repoFiles = new Map(); logs.length = 0;
 }
 
-// Minimal GitHub Git Data API for flushStaging's commit (only in githubMode).
+// Minimal GitHub (Contents + Git Data API) backed by repoFiles; only in githubMode.
+const blobs = new Map();
+let pendingTree = [];
 async function githubApi(url, opts) {
   const m = opts.method ?? "GET";
   const j = (o) => new Response(JSON.stringify(o), { status: 200 });
+  const contents = url.match(/\/contents\/([^?]+)/);
+  if (m === "GET" && contents) {
+    const content = repoFiles.get(decodeURIComponent(contents[1]));
+    return content == null ? new Response("", { status: 404 })
+      : j({ content: Buffer.from(content).toString("base64"), sha: "file" });
+  }
   if (m === "GET" && url.includes("/git/ref/heads/")) return j({ object: { sha: "head" } });
   if (m === "GET" && url.includes("/git/commits/")) return j({ tree: { sha: "tree" } });
-  if (m === "POST" && url.endsWith("/git/blobs")) return j({ sha: "blob" });
-  if (m === "POST" && url.endsWith("/git/trees")) { committedPaths.push(...JSON.parse(opts.body).tree.map((t) => t.path)); return j({ sha: "tree2" }); }
+  if (m === "POST" && url.endsWith("/git/blobs")) {
+    const sha = `blob${blobs.size}`;
+    blobs.set(sha, Buffer.from(JSON.parse(opts.body).content, "base64").toString("utf8"));
+    return j({ sha });
+  }
+  if (m === "POST" && url.endsWith("/git/trees")) {
+    pendingTree = JSON.parse(opts.body).tree;
+    committedPaths.push(...pendingTree.map((t) => t.path));
+    return j({ sha: "tree2" });
+  }
   if (m === "POST" && url.endsWith("/git/commits")) { if (commitHook) { const h = commitHook; commitHook = null; await h(); } return j({ sha: "commit" }); }
-  if (m === "PATCH" && url.includes("/git/refs/heads/")) return j({});
+  if (m === "PATCH" && url.includes("/git/refs/heads/")) {
+    for (const t of pendingTree) t.sha ? repoFiles.set(t.path, blobs.get(t.sha)) : repoFiles.delete(t.path);
+    return j({});
+  }
   return new Response("", { status: 404 });
 }
 
@@ -162,6 +187,9 @@ async function seedPhoto(slug, id, tag) {
   await originals.put(`${slug}/${id}/original.jpg`, jpeg(100, 100, tag));
 }
 const legacyPhotos = (slug, ids) => "photos:\n" + ids.map((id) => `  - id: "${id}"\n    key: "${slug}/${id}"\n    width: 100\n    height: 100\n    caption: ""`).join("\n");
+const stagedKey = (slug) => `_pending/files/site/content/projects/${slug}/_index.md`;
+const stubKey = (slug, id) => `_pending/files/site/content/projects/${slug}/${id}.md`;
+const isPending = (key) => { const o = originals.store.get(key); return Boolean(o) && !o.customMetadata?.published; };
 const tempLeftovers = () => [...assets.store.keys()].filter((k) => k.startsWith("_transform/"));
 const variantTag = async (key) => { const o = await assets.get(`${key}/1200.jpg`); return o ? (await o.text()).split("<-")[1] : null; };
 
@@ -341,9 +369,27 @@ const rb = await call("POST", ["rebuild"]);
 check("rebuild succeeds", rb.status === 200, `${rb.status} ${JSON.stringify(rb.body)}`);
 check("upload during the commit succeeds", racing?.status === 201, String(racing?.status));
 check("the committed snapshot had photo 001", committedPaths.includes(`site/content/projects/${s8.slug}/001.md`));
-check("manifest updated mid-commit stays pending with 002", /id: ['"]?002/.test(await manifest(s8.slug)), (await manifest(s8.slug)) ? "pending" : "manifest was cleared");
-check("unchanged committed files are cleared", !originals.store.has(`_pending/files/site/content/projects/${s8.slug}/001.md`));
-check("new photo's stub stays pending", originals.store.has(`_pending/files/site/content/projects/${s8.slug}/002.md`));
+check("manifest updated mid-commit stays pending with 002", /id: ['"]?002/.test(await manifest(s8.slug)) && isPending(stagedKey(s8.slug)), (await manifest(s8.slug)) ? "present" : "manifest was cleared");
+check("unchanged committed files are marked published", !isPending(stubKey(s8.slug, "001")) && originals.store.has(stubKey(s8.slug, "001")));
+check("new photo's stub stays pending", isPending(stubKey(s8.slug, "002")));
+
+// Codex's interleaving: the write lands after the snapshot and immediately before cleanup.
+let late;
+ackHook = async () => { late = await call("POST", ["projects", s8.slug, "photos"], { files: [["c.jpg", jpeg(100, 100, "C")]] }); };
+const rb2 = await call("POST", ["rebuild"]);
+check("rebuild with a write just before cleanup succeeds", rb2.status === 200 && late?.status === 201, `${rb2.status} / ${late?.status}`);
+check("that write's manifest (with 003) stays pending", /id: ['"]?003/.test(await manifest(s8.slug)) && isPending(stagedKey(s8.slug)));
+check("that write's stub stays pending", isPending(stubKey(s8.slug, "003")));
+
+committedPaths = [];
+const rb3 = await call("POST", ["rebuild"]);
+check("next rebuild publishes the surviving manifest and stub", rb3.status === 200 && committedPaths.includes(`site/content/projects/${s8.slug}/_index.md`) && committedPaths.includes(`site/content/projects/${s8.slug}/003.md`), committedPaths.join());
+check("GitHub now has photos 001–003", ["001", "002", "003"].every((id) => new RegExp(`id: ['"]?${id}`).test(repoFiles.get(`site/content/projects/${s8.slug}/_index.md`) ?? "")));
+check("nothing left pending after that rebuild", (await call("GET", ["staging"])).body?.files === 0, JSON.stringify((await call("GET", ["staging"])).body));
+const after = (await call("GET", ["projects", s8.slug, "photos"])).body;
+check("admin reads the published series from GitHub", Array.isArray(after) && after.map((p) => p.id).join() === "001,002,003", JSON.stringify(after).slice(0, 80));
+const up4 = await call("POST", ["projects", s8.slug, "photos"], { files: [["d.jpg", jpeg(100, 100, "D")]] });
+check("upload after publish continues at 004 and is pending", up4.body.uploaded?.[0]?.id === "004" && isPending(stagedKey(s8.slug)), up4.body.uploaded?.[0]?.id);
 githubMode = false;
 
 out(`\n${failures ? failures + " FAILED" : "ALL PASSED"}`);

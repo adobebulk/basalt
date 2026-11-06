@@ -5,9 +5,26 @@
  * Key layout in ORIGINALS_BUCKET:
  *   _pending/files/{github-path}   → file content (text)
  *   _pending/deletes/{github-path} → "1"  (mark for deletion)
+ *
+ * Rebuild never deletes staging records. It marks the exact revision it committed
+ * as published with a conditional rewrite (If-Match on the snapshot etag), so a
+ * record replaced during the commit fails the condition and stays pending. Every
+ * reader treats a published record as absent, which leaves GitHub as the source
+ * of truth after a Rebuild, exactly as when staging used to be cleared.
  */
 
 import { commitFiles, getFile } from "./github.js";
+
+const PUBLISHED = "published";
+
+/** True for a staged record that is still pending (not yet committed by Rebuild). */
+export function isLive(obj) {
+  return Boolean(obj) && !obj.customMetadata?.[PUBLISHED];
+}
+
+async function listLive(bucket, prefix) {
+  return (await listAll(bucket, { prefix, include: ["customMetadata"] })).filter(isLive);
+}
 
 async function listAll(bucket, options) {
   const objects = [];
@@ -40,10 +57,10 @@ export async function stageDelete(bucket, path) {
  * githubFallback is async (path) => { content } | null
  */
 export async function readStaged(bucket, path, githubFallback) {
-  const del = await bucket.get(`_pending/deletes/${path}`);
-  if (del) return null;
+  const del = await bucket.head(`_pending/deletes/${path}`);
+  if (isLive(del)) return null;
   const pending = await bucket.get(`_pending/files/${path}`);
-  if (pending) return { content: await pending.text() };
+  if (isLive(pending)) return { content: await pending.text() };
   return githubFallback ? githubFallback(path) : null;
 }
 
@@ -52,7 +69,7 @@ export async function readStaged(bucket, path, githubFallback) {
  * Scans _pending/files/site/content/projects/<slug>/_index.md keys.
  */
 export async function getStagedSlugs(bucket) {
-  const objects = await listAll(bucket, { prefix: "_pending/files/site/content/projects/" });
+  const objects = await listLive(bucket, "_pending/files/site/content/projects/");
   const slugs = new Set();
   for (const { key } of objects) {
     const m = key.match(/^_pending\/files\/site\/content\/projects\/([^/]+)\/_index\.md$/);
@@ -66,7 +83,7 @@ export async function getStagedSlugs(bucket) {
  * Scans _pending/files/site/content/posts/<slug>/index.md keys.
  */
 export async function getStagedPostSlugs(bucket) {
-  const objects = await listAll(bucket, { prefix: "_pending/files/site/content/posts/" });
+  const objects = await listLive(bucket, "_pending/files/site/content/posts/");
   const slugs = new Set();
   for (const { key } of objects) {
     const m = key.match(/^_pending\/files\/site\/content\/posts\/([^/]+)\/index\.md$/);
@@ -77,8 +94,7 @@ export async function getStagedPostSlugs(bucket) {
 
 /** True if the post index.md is staged for deletion. */
 export async function isStagedPostDeleted(bucket, slug) {
-  const o = await bucket.get(`_pending/deletes/site/content/posts/${slug}/index.md`);
-  return !!o;
+  return isLive(await bucket.head(`_pending/deletes/site/content/posts/${slug}/index.md`));
 }
 
 /**
@@ -86,7 +102,7 @@ export async function isStagedPostDeleted(bucket, slug) {
  * Scans _pending/files/site/content/pages/<slug>/index.md keys.
  */
 export async function getStagedPageSlugs(bucket) {
-  const objects = await listAll(bucket, { prefix: "_pending/files/site/content/pages/" });
+  const objects = await listLive(bucket, "_pending/files/site/content/pages/");
   const slugs = new Set();
   for (const { key } of objects) {
     const m = key.match(/^_pending\/files\/site\/content\/pages\/([^/]+)\/index\.md$/);
@@ -97,22 +113,19 @@ export async function getStagedPageSlugs(bucket) {
 
 /** True if the page index.md is staged for deletion. */
 export async function isStagedPageDeleted(bucket, slug) {
-  const o = await bucket.get(`_pending/deletes/site/content/pages/${slug}/index.md`);
-  return !!o;
+  return isLive(await bucket.head(`_pending/deletes/site/content/pages/${slug}/index.md`));
 }
 
 /** True if the series _index.md is staged for deletion. */
 export async function isStagedDeleted(bucket, slug) {
-  const o = await bucket.get(
-    `_pending/deletes/site/content/projects/${slug}/_index.md`);
-  return !!o;
+  return isLive(await bucket.head(`_pending/deletes/site/content/projects/${slug}/_index.md`));
 }
 
 /** Counts of pending writes and deletes. Used by the admin rebuild indicator. */
 export async function pendingCounts(bucket) {
   const [files, deletions] = await Promise.all([
-    listAll(bucket, { prefix: "_pending/files/" }),
-    listAll(bucket, { prefix: "_pending/deletes/" }),
+    listLive(bucket, "_pending/files/"),
+    listLive(bucket, "_pending/deletes/"),
   ]);
   return { files: files.length, deletions: deletions.length };
 }
@@ -122,26 +135,30 @@ export async function pendingCounts(bucket) {
  * Returns { noop: true } if nothing pending, else { files, deletions }.
  */
 export async function flushStaging(bucket, token, repo) {
-  const filesObjects   = await listAll(bucket, { prefix: "_pending/files/" });
-  const deletesObjects = await listAll(bucket, { prefix: "_pending/deletes/" });
+  const filesObjects   = await listLive(bucket, "_pending/files/");
+  const deletesObjects = await listLive(bucket, "_pending/deletes/");
 
-  if (!filesObjects.length && !deletesObjects.length)
-    return { noop: true };
-
-  // Snapshot each key with its etag so cleanup can tell whether it changed.
+  // Snapshot each record with its etag; the ack below is conditional on it.
   const files = (await Promise.all(
     filesObjects.map(async ({ key }) => {
       const obj = await bucket.get(key);
-      if (!obj) return null;
-      return { key, etag: obj.etag, path: key.slice("_pending/files/".length), content: await obj.text() };
+      if (!isLive(obj)) return null;
+      return {
+        key, etag: obj.httpEtag, body: await obj.text(),
+        contentType: "text/plain; charset=utf-8", path: key.slice("_pending/files/".length),
+      };
     })
   )).filter(Boolean);
   const deleteMarkers = (await Promise.all(
     deletesObjects.map(async ({ key }) => {
       const obj = await bucket.head(key);
-      return obj ? { key, etag: obj.etag } : null;
+      return isLive(obj) ? { key, etag: obj.httpEtag, body: "1", contentType: "text/plain" } : null;
     })
   )).filter(Boolean);
+
+  if (!files.length && !deleteMarkers.length)
+    return { noop: true };
+
   const deletions = deleteMarkers.map(({ key }) => key.slice("_pending/deletes/".length));
 
   // Skip deletions for paths that don't exist in GitHub — sending sha:null for a
@@ -153,17 +170,24 @@ export async function flushStaging(bucket, token, repo) {
   ).filter(Boolean);
 
   await commitFiles({ token, repo,
-    message: "content: publish staged changes", files, deletions: existingDeletions });
+    message: "content: publish staged changes",
+    files: files.map(({ path, body }) => ({ path, content: body })),
+    deletions: existingDeletions });
 
-  // Clear only what was committed (including phantom deletes that were skipped).
-  // A key rewritten while the commit was in flight holds a newer change and must
-  // stay pending for the next Rebuild. R2 delete is unconditional, so a write
-  // landing between this head() and delete() can still be lost; that window is
-  // milliseconds instead of the whole GitHub commit.
-  await Promise.all([...files, ...deleteMarkers].map(async ({ key, etag }) => {
-    const current = await bucket.head(key);
-    if (current && current.etag === etag) await bucket.delete(key);
-  }));
+  // Acknowledge exactly the revisions that were committed (including phantom
+  // deletes that were skipped). The rewrite is atomic with respect to other
+  // writers: if a record was replaced after the snapshot, If-Match fails and the
+  // newer revision stays pending for the next Rebuild. Whether an etag is
+  // per-write or a content hash, a match means the record holds the committed bytes.
+  // Records are never deleted here — an unconditional delete could drop a newer write.
+  const publishedAt = new Date().toISOString();
+  await Promise.all([...files, ...deleteMarkers].map(({ key, etag, body, contentType }) =>
+    bucket.put(key, body, {
+      httpMetadata: { contentType },
+      customMetadata: { [PUBLISHED]: publishedAt },
+      onlyIf: new Headers({ "If-Match": etag }),
+    })
+  ));
 
   return { files: files.length, deletions: existingDeletions.length };
 }
