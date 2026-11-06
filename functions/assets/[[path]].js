@@ -24,7 +24,8 @@ export async function onRequest(ctx) {
 
   // params.path is an array of path segments from the [[path]] catch-all.
   const key = Array.isArray(params.path) ? params.path.join("/") : (params.path ?? "");
-  if (!key) return new Response("Not found", { status: 404 });
+  // _transform/ holds short-lived private originals used only as image-transform sources.
+  if (!key || key.startsWith("_transform/")) return new Response("Not found", { status: 404 });
 
   const object = await bucket.get(key);
   if (!object) return new Response("Not found", { status: 404 });

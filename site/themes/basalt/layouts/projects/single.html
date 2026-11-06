@@ -19,16 +19,16 @@
 
       <div id="permalink-gallery">
         <a
-          href="{{ $base }}/{{ .key }}/2400.jpg"
-          data-pswp-src="{{ $base }}/{{ .key }}/2400.jpg"
+          href="{{ partial "asset-url.html" (dict "photo" . "file" "2400.jpg") }}"
+          data-pswp-src="{{ partial "asset-url.html" (dict "photo" . "file" "2400.jpg") }}"
           {{ if gt .width 0 }}data-pswp-width="{{ .width }}" data-pswp-height="{{ .height }}"{{ end }}
           id="permalink-photo"
           class="block cursor-zoom-in"
         >
           <img
             class="w-full h-auto rounded-sm bg-stone-200"
-            src="{{ $base }}/{{ .key }}/1200.jpg"
-            srcset="{{ $base }}/{{ .key }}/1200.avif 1200w, {{ $base }}/{{ .key }}/2400.avif 2400w"
+            src="{{ partial "asset-url.html" (dict "photo" . "file" "1200.jpg") }}"
+            srcset="{{ partial "asset-url.html" (dict "photo" . "file" "1200.avif") }} 1200w, {{ partial "asset-url.html" (dict "photo" . "file" "2400.avif") }} 2400w"
             sizes="(min-width:1024px) 1024px, 100vw"
             width="{{ .width }}" height="{{ .height }}"
             alt="{{ with .caption }}{{ . }}{{ else }}{{ $series.Title }}{{ end }}"

@@ -1,0 +1,6 @@
+{{- /* Public URL of one photo file. A re-process rewrites variants in place and
+       /assets is cached immutable, so ?v=<rev> gives browsers a new URL. */ -}}
+{{- $key := .key | default .photo.key -}}
+{{- $url := printf "%s/%s/%s" site.Params.assetsBaseURL $key .file -}}
+{{- with .photo.rev }}{{ $url = printf "%s?v=%v" $url . }}{{ end -}}
+{{- return $url -}}

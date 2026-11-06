@@ -1310,7 +1310,7 @@ function photoCardHTML(slug, f, idx, total) {
             onclick="movePhoto('${slug}','${esc(f.id)}',1)">▼</button>
         </div>
         <div class="photo-card-thumb">
-          <img src="/assets/${esc(f.key)}/600.jpg" loading="lazy" onerror="this.style.display='none'">
+          <img src="${esc(assetSrc(f, '600.jpg'))}" loading="lazy" onerror="this.style.display='none'">
         </div>
         <div class="photo-card-fields">
           <div class="photo-card-id">${esc(f.id)}</div>
@@ -1327,7 +1327,11 @@ function photoCardHTML(slug, f, idx, total) {
           <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
             ${hasBody ? '▸ Edit note' : '▸ Add note'}
           </button>
-          <div id="feat-btn-${slug}-${esc(f.id)}">${featureBtnHTML(slug, f.id)}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="photo-feature-btn" title="Rebuild this photo's sizes from the stored original — use if it shows the wrong image"
+              onclick="rebakePhoto('${slug}','${esc(f.id)}',this)">↻ Re-process</button>
+            <div id="feat-btn-${slug}-${esc(f.id)}">${featureBtnHTML(slug, f.id)}</div>
+          </div>
         </div>
         <div class="photo-body-editor hidden" id="body-editor-${slug}-${esc(f.id)}">
           <textarea rows="4" placeholder="Markdown note shown on the photo permalink page…">${esc(hasBody ? f.body : '')}</textarea>
@@ -1523,6 +1527,21 @@ async function clearBody(slug, id, btn) {
     editor.classList.add('hidden');
     btn.remove();
   } catch(e) { toast('Remove failed: ' + e.message, true); }
+}
+
+async function rebakePhoto(slug, id, btn) {
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = '↻ Re-processing…';
+  try {
+    const photo = await api('POST', `/projects/${slug}/photos/${id}/rebake`);
+    // /assets URLs are cached as immutable; the bumped rev gives the thumbnail a new URL.
+    const img = document.querySelector(`#pcard-${slug}-${id} .photo-card-thumb img`);
+    if (img) img.src = assetSrc(photo, '600.jpg');
+    await refreshStagingStatus();
+    toast(`Re-processed ${id}`);
+  } catch(e) { toast('Re-process failed: ' + e.message, true); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 async function deletePhoto(slug, id, e) {
@@ -2192,7 +2211,7 @@ async function loadPickerPhotos() {
     }
     photos.forEach(p => {
       const img = document.createElement('img');
-      img.src = `/assets/${p.key}/600.jpg`;
+      img.src = assetSrc(p, '600.jpg');
       img.style.cssText = 'width:100%;aspect-ratio:1;object-fit:cover;cursor:pointer;border-radius:2px;border:2px solid transparent;transition:border-color .1s';
       img.title = p.caption || p.id;
       img.dataset.photoId = p.id;
@@ -2218,7 +2237,7 @@ function insertPhotoMarkdown() {
   const size   = document.getElementById('picker-size').value;
   const altRaw = document.getElementById('picker-alt').value.trim();
   const alt    = altRaw || photo.caption || photo.id;
-  const url    = `/assets/${photo.key}/${size}.jpg`;
+  const url    = assetSrc(photo, `${size}.jpg`);
   const md     = `![${alt}](${url})\n`;
 
   const ta = document.getElementById(photoPickerTarget || 'post-body');
@@ -2768,6 +2787,8 @@ async function confirmPoolPickerMove() {
 }
 
 // ── Util ──────────────────────────────────────────────────────────
+// Public variant URL; ?v=<rev> matches the site templates after a re-process.
+function assetSrc(p, file) { return `/assets/${p.key}/${file}${p.rev ? `?v=${p.rev}` : ''}`; }
 function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 function jsString(s) { return JSON.stringify(String(s)); }
 function onclickHandler(fn, ...args) {

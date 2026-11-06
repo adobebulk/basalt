@@ -2,7 +2,7 @@
 
 A self-hostable Hugo CMS with a serverless admin panel, Cloudflare R2 asset storage, and GitHub-based content versioning. Supports photo series with a full image-processing pipeline, text posts, and is designed to add new content types cleanly alongside existing ones.
 
-Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.4.1**
+Everything runs on **Cloudflare + GitHub**. Photos live in R2 (never git). Metadata commits are text-only. Current version: **0.4.2**
 
 This repo is the **engine**. A live site is a separate **instance** (own Pages project, R2, Access, secrets) that sets `site/data/basalt.yaml` and optionally overlays Hugo templates. See **BASALT.md**.
 
@@ -271,7 +271,7 @@ The photo upload pipeline resizes images via Cloudflare Image Transforms. This n
 2. **Edit** captions, settings, post body — all changes remain staged and immediately visible in the admin.
 3. **Rebuild** — the "Rebuild" button flushes all staged changes into a single GitHub commit, then POSTs to the deploy hook. Cloudflare Pages rebuilds the site (~30 seconds). When `CF_ACCOUNT_ID` and `CF_API_TOKEN` (Pages Read) are set, the rebuild bar polls `GET /api/deploy-status` until the production deploy finishes or three minutes elapse.
 
-Staged changes never go to visitors until Rebuild is pressed. You can stage as many changes as you want and ship them all at once. Settings reads can degrade when GitHub is unavailable, but settings writes require a readable GitHub baseline unless a staged settings file already exists.
+Staged changes never go to visitors until Rebuild is pressed. You can stage as many changes as you want and ship them all at once. Photo ids are never reused (each series manifest keeps a `lastPhotoId` high-water mark), and every bake transforms from a fresh, unguessable temporary object, so a new upload can never pick up a previously cached image and private originals are never exposed. If a photo ever shows the wrong image, its card's **↻ Re-process** button rebuilds the variants from the stored original. Re-processing bumps the photo's revision, so its public URLs change and visitors' browsers fetch the new image after the next Rebuild. Manifest writes use compare-and-swap, so two admin tabs or a scheduler working at once cannot hand out the same photo id or drop each other's edits. Settings reads can degrade when GitHub is unavailable, but settings writes require a readable GitHub baseline unless a staged settings file already exists.
 
 ---
 
