@@ -32,11 +32,13 @@ git switch -c fix/<short-name>     # feat/<name> for features
 
 - Keep `admin/public/index.html` and `site/static/admin/index.html` identical
   (`diff` them before committing).
-- Any path that rewrites a series manifest must spread the existing front matter
-  (`{ ...manifest.data, ... }`) so fields like `lastPhotoId` survive.
-- Photo ids are never reused: every add path calls
-  `nextPhotoId(photos, manifest.data.lastPhotoId)` and persists `lastPhotoId` in
-  the same `stageFile` write.
+- Never `stageFile` a series/pool manifest directly: use `updateManifest(env, slug, mutate)`
+  (compare-and-swap; `mutate` may run more than once, so no side effects in it) and
+  spread the current front matter so fields like `lastPhotoId` survive.
+- Photo ids are never reused: reserve with `reservePhotoId()` before writing any R2
+  object; remove with `removeManifestPhoto()` so the high-water mark is kept.
+- Public variant URLs go through `partials/asset-url.html` (appends `?v=<rev>`) in the
+  templates and `assetSrc()` in the admin.
 
 ## 4. Verify
 

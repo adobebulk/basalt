@@ -23,24 +23,46 @@ async function toBytes(v) {
   throw new Error("unsupported put value " + Object.prototype.toString.call(v));
 }
 
+// Every R2 call yields to the event loop so concurrent requests interleave.
+const tick = () => new Promise((r) => setTimeout(r, Math.random() * 3));
+let etagSeq = 0;
+
+// Mirrors R2 conditional puts (as observed in wrangler/miniflare): If-Match on
+// the quoted httpEtag, If-None-Match: * for create-only; a failed condition returns null.
+function conditionHolds(onlyIf, existing) {
+  if (!onlyIf) return true;
+  const h = onlyIf instanceof Headers ? onlyIf : null;
+  const ifMatch = h?.get("If-Match") ?? (onlyIf.etagMatches != null ? `"${onlyIf.etagMatches}"` : null);
+  const ifNone = h?.get("If-None-Match");
+  if (ifMatch != null && (!existing || `"${existing.etag}"` !== ifMatch)) return false;
+  if (ifNone === "*" && existing) return false;
+  return true;
+}
+
 class Bucket {
   constructor(name) { this.name = name; this.store = new Map(); this.puts = []; }
   async put(key, value, opts = {}) {
+    const bytes = await toBytes(value);
+    await tick();
+    if (!conditionHolds(opts.onlyIf, this.store.get(key))) return null;
     this.puts.push(key);
-    this.store.set(key, { bytes: await toBytes(value), customMetadata: opts.customMetadata ?? {}, httpMetadata: opts.httpMetadata ?? {} });
+    const etag = `e${++etagSeq}`;
+    this.store.set(key, { bytes, etag, customMetadata: opts.customMetadata ?? {}, httpMetadata: opts.httpMetadata ?? {} });
+    return { key, etag, httpEtag: `"${etag}"` };
   }
   wrap(key, o) {
     return {
-      key, customMetadata: o.customMetadata, httpMetadata: o.httpMetadata, size: o.bytes.length,
+      key, etag: o.etag, httpEtag: `"${o.etag}"`, customMetadata: o.customMetadata, httpMetadata: o.httpMetadata, size: o.bytes.length,
       get body() { return new Response(o.bytes.slice()).body; },
       arrayBuffer: async () => o.bytes.slice().buffer,
       text: async () => dec.decode(o.bytes),
     };
   }
-  async get(key) { const o = this.store.get(key); return o ? this.wrap(key, o) : null; }
-  async head(key) { const o = this.store.get(key); return o ? { key, size: o.bytes.length, customMetadata: o.customMetadata } : null; }
-  async delete(keys) { for (const k of [].concat(keys)) this.store.delete(k); }
+  async get(key) { await tick(); const o = this.store.get(key); return o ? this.wrap(key, o) : null; }
+  async head(key) { await tick(); const o = this.store.get(key); return o ? { key, etag: o.etag, httpEtag: `"${o.etag}"`, size: o.bytes.length, customMetadata: o.customMetadata } : null; }
+  async delete(keys) { await tick(); for (const k of [].concat(keys)) this.store.delete(k); }
   async list({ prefix = "" } = {}) {
+    await tick();
     const objects = [...this.store.keys()].filter((k) => k.startsWith(prefix)).sort()
       .map((k) => ({ key: k, customMetadata: this.store.get(k).customMetadata }));
     return { objects, truncated: false };
@@ -235,6 +257,46 @@ await call("POST", ["pool"], { files: [["q.jpg", jpeg(100, 100, "Q3")]] });
 await call("POST", ["pool", "process"], { json: { limit: 10 } });
 const lm = (await call("GET", ["pool"])).body.processed.map((p) => p.id);
 check("move-out-then-process on a legacy pool gets 003", lm.join() === "001,003", lm.join());
+
+// ── 6. concurrent requests ──────────────────────────────────────────────────
+console.log("\n[6] concurrent requests on one manifest");
+reset();
+const { body: s6 } = await call("POST", ["projects"], { json: { title: "Busy" } });
+await call("POST", ["projects", s6.slug, "photos"], { files: [["x.jpg", jpeg(100, 100, "X")]] });
+const cu = await Promise.all(["U1", "U2", "U3"].map((t) =>
+  call("POST", ["projects", s6.slug, "photos"], { files: [[`${t}.jpg`, jpeg(100, 100, t)]] })));
+const cuIds = cu.map((r) => r.body.uploaded?.[0]?.id);
+check("concurrent uploads get distinct ids", new Set(cuIds).size === 3 && !cuIds.includes(undefined), cuIds.join());
+const listed = (await call("GET", ["projects", s6.slug, "photos"])).body.map((p) => p.id);
+check("all concurrent uploads are in the manifest", ["001", ...cuIds].every((id) => listed.includes(id)), listed.join());
+const cuTags = await Promise.all(cuIds.map((id) => variantTag(`${s6.slug}/${id}`)));
+check("each concurrent upload shows its own image", cuTags.slice().sort().join() === "U1,U2,U3", cuTags.join());
+
+const [, edit] = await Promise.all([
+  call("POST", ["projects", s6.slug, "photos"], { files: [["y.jpg", jpeg(100, 100, "Y")]] }),
+  call("PATCH", ["projects", s6.slug, "photos", "001"], { json: { caption: "kept" } }),
+]);
+check("caption edit racing an upload is kept", edit.status === 200 && /caption: kept/.test(await manifest(s6.slug)));
+check("upload racing a caption edit is kept", (await call("GET", ["projects", s6.slug, "photos"])).body.length === 5);
+
+reset();
+const { body: s6b } = await call("POST", ["projects"], { json: { title: "Dest" } });
+await call("POST", ["pool"], { files: [["m.jpg", jpeg(100, 100, "M")]] });
+await call("POST", ["pool", "process"], { json: { limit: 10 } });
+const dupMove = await Promise.all([1, 2].map(() => call("POST", ["projects", s6b.slug, "photos", "from-pool"], { json: { ids: ["001"] } })));
+const movedCount = dupMove.reduce((n, r) => n + (r.body.moved?.length ?? 0), 0);
+const destPhotos = (await call("GET", ["projects", s6b.slug, "photos"])).body;
+check("same pool photo moved twice at once lands once", movedCount === 1 && destPhotos.length === 1, `moved ${movedCount}, series has ${destPhotos.length}`);
+
+// ── 7. asset revision ───────────────────────────────────────────────────────
+console.log("\n[7] rebake bumps the photo's asset revision");
+reset();
+const { body: s7 } = await call("POST", ["projects"], { json: { title: "Rev" } });
+await call("POST", ["projects", s7.slug, "photos"], { files: [["a.jpg", jpeg(100, 100, "A")]] });
+const r1 = await call("POST", ["projects", s7.slug, "photos", "001", "rebake"]);
+const r2 = await call("POST", ["projects", s7.slug, "photos", "001", "rebake"]);
+check("rev goes 1 then 2", r1.body?.rev === 1 && r2.body?.rev === 2, `${r1.body?.rev}, ${r2.body?.rev}`);
+check("manifest stores rev: 2", /rev: 2/.test(await manifest(s7.slug)));
 
 console.log(`\n${failures ? failures + " FAILED" : "ALL PASSED"}`);
 process.exit(failures ? 1 : 0);

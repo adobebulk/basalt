@@ -413,6 +413,66 @@ async function readManifest(env, slug) {
   return { ...parseFrontMatter(result.content), raw: result.content };
 }
 
+const MANIFEST_CAS_ATTEMPTS = 8;
+
+/**
+ * Read-modify-write a series manifest with compare-and-swap on its staged copy
+ * (If-Match on the staged etag, or If-None-Match: * when nothing is staged yet),
+ * so concurrent requests cannot overwrite each other or allocate the same id.
+ *
+ * `mutate(data)` returns { write, result }: `write` is the new front matter (omit
+ * it to skip writing) and `result` is returned to the caller. It can run several
+ * times, so it must not have side effects. Returns null if the manifest does not
+ * exist or is staged for deletion, unless `init()` supplies a starting document.
+ */
+async function updateManifest(env, slug, mutate, { init } = {}) {
+  const path = indexPath(slug);
+  const stagedKey = `_pending/files/${path}`;
+  for (let attempt = 0; attempt < MANIFEST_CAS_ATTEMPTS; attempt++) {
+    if (await env.stagingBucket.head(`_pending/deletes/${path}`)) return null;
+    const staged = await env.stagingBucket.get(stagedKey);
+    const content = staged ? await staged.text() : (await githubFileFallback(env, path))?.content;
+    let data, body;
+    if (content != null) ({ data, body } = parseFrontMatter(content));
+    else if (init) { data = init(); body = ""; }
+    else return null;
+
+    const { write, result } = mutate(data);
+    if (!write) return result;
+    const stored = await env.stagingBucket.put(stagedKey, serializeFrontMatter(write, body ?? ""), {
+      httpMetadata: { contentType: "text/plain; charset=utf-8" },
+      onlyIf: new Headers(staged ? { "If-Match": staged.httpEtag } : { "If-None-Match": "*" }),
+    });
+    if (stored) return result;
+    await new Promise((r) => setTimeout(r, (attempt + 1) * (20 + Math.random() * 50)));
+  }
+  throw new Error(`series ${slug} is being changed by another request; try again`);
+}
+
+/** Reserve the next photo id in a manifest before any R2 object is written for it. */
+function reservePhotoId(env, slug, opts) {
+  return updateManifest(env, slug, (data) => {
+    const id = nextPhotoId(data.photos ?? [], data.lastPhotoId);
+    return { write: { ...data, lastPhotoId: parseInt(id, 10) }, result: id };
+  }, opts);
+}
+
+/** Remove a photo from a manifest, keeping the id high-water mark. Returns false if it was already gone. */
+function removeManifestPhoto(env, slug, id, extra = {}) {
+  return updateManifest(env, slug, (data) => {
+    const photos = data.photos ?? [];
+    if (!photos.some((p) => p.id === id)) return { result: false };
+    const write = {
+      ...data,
+      ...extra,
+      photos: photos.filter((p) => p.id !== id),
+      lastPhotoId: photoIdHighWater(photos, data.lastPhotoId),
+    };
+    if (write.cover === id) write.cover = write.photos[0]?.id ?? "";
+    return { write, result: true };
+  });
+}
+
 async function readSettings(env, { requireGithub = false } = {}) {
   const result = await loadSettingsFile(env, { requireGithub });
   const settings = result ? (yaml.load(result.content) ?? {}) : {};
@@ -558,33 +618,33 @@ export async function onRequest(ctx) {
       }
 
       const addedPhotos = [];
-      let photos = [...(manifest.data.photos ?? [])];
       const downloadsDefault = manifest.data.downloadsDefault === true;
-      let cover = manifest.data.cover || "";
-      let lastPhotoId = manifest.data.lastPhotoId ?? 0;
 
       for (const file of files) {
         const originalBuffer = await file.arrayBuffer();
         const dims = getImageDimensions(originalBuffer) ?? { width: 0, height: 0 };
-        const id = nextPhotoId(photos, lastPhotoId);
-        lastPhotoId = parseInt(id, 10);
+        // Reserve before baking so a concurrent upload can never write R2 objects
+        // under the same id; a failed bake just leaves a gap in the numbering.
+        const id = await reservePhotoId(env, slug);
+        if (!id) return err("series not found", 404);
         const key = `${slug}/${id}`;
 
         await bakePhoto(env, slug, id, originalBuffer, { publicOriginal: downloadsDefault });
 
         const photo = { id, key, width: dims.width, height: dims.height, caption: "" };
-        photos.push(photo);
-        addedPhotos.push(photo);
-        if (!cover) cover = id;
-
         // Stage immediately so a later photo failing this request cannot orphan
         // already-baked R2 objects (they would be unlisted and unretryable).
-        const updatedManifest = serializeFrontMatter(
-          { ...manifest.data, photos, cover, lastPhotoId },
-          manifest.body ?? ""
-        );
         await stageFile(env.stagingBucket, stubPath(slug, id), newPhotoStub(id));
-        await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
+        const added = await updateManifest(env, slug, (data) => ({
+          write: { ...data, photos: [...(data.photos ?? []), photo], cover: data.cover || id },
+          result: true,
+        }));
+        if (!added) {
+          await cleanupPhotoAssets(env, slug, id);
+          await stageDelete(env.stagingBucket, stubPath(slug, id));
+          return err("series was deleted during upload", 409);
+        }
+        addedPhotos.push(photo);
       }
 
       return json({ uploaded: addedPhotos }, 201);
@@ -613,20 +673,20 @@ export async function onRequest(ctx) {
 
       await rebakePhoto(env, slug, id, buf);
 
-      // Transforms take seconds; re-read so caption edits or reorders saved
-      // meanwhile are not overwritten by the pre-transform snapshot.
-      const current = await readManifest(env, slug);
-      const photos = [...(current?.data.photos ?? [])];
-      const idx = photos.findIndex((p) => p.id === id);
-      if (idx === -1) return err("photo was removed while re-processing", 409);
-
+      // `rev` is appended to public variant URLs (?v=<rev>): the variants were
+      // overwritten in place and /assets is cached immutable, so browsers need a
+      // new URL. Applied to the current manifest so edits made meanwhile survive.
       const dims = getImageDimensions(buf);
-      if (dims && (photos[idx].width !== dims.width || photos[idx].height !== dims.height)) {
-        photos[idx] = { ...photos[idx], width: dims.width, height: dims.height };
-        await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter({ ...current.data, photos }, current.body ?? ""));
-      }
+      const photo = await updateManifest(env, slug, (data) => {
+        const photos = [...(data.photos ?? [])];
+        const idx = photos.findIndex((p) => p.id === id);
+        if (idx === -1) return { result: null };
+        photos[idx] = { ...photos[idx], ...(dims ?? {}), rev: (Number(photos[idx].rev) || 0) + 1 };
+        return { write: { ...data, photos }, result: photos[idx] };
+      });
+      if (!photo) return err("photo was removed while re-processing", 409);
 
-      return json(photos[idx]);
+      return json(photo);
     }
 
     // ── PATCH /api/projects/:slug/photos/:id ─────────────────────────────────
@@ -671,20 +731,29 @@ export async function onRequest(ctx) {
         updated.downloadable = body.downloadable;
       }
 
-      // Handle reorder: move this photo to the given 0-based index
-      if (body.order !== undefined) {
-        photos.splice(idx, 1);
-        photos.splice(Math.max(0, Math.min(body.order, photos.length)), 0, updated);
-      } else {
-        photos[idx] = updated;
-      }
+      const saved = await updateManifest(env, slug, (data) => {
+        const current = [...(data.photos ?? [])];
+        const i = current.findIndex((p) => p.id === id);
+        if (i === -1) return { result: null };
+        const next = { ...current[i] };
+        if (body.caption !== undefined) next.caption = updated.caption;
+        if (body.body !== undefined) {
+          if (updated.body === undefined) delete next.body;
+          else next.body = updated.body;
+        }
+        if (updated.downloadable !== prev.downloadable) next.downloadable = updated.downloadable;
+        // Handle reorder: move this photo to the given 0-based index
+        if (body.order !== undefined) {
+          current.splice(i, 1);
+          current.splice(Math.max(0, Math.min(body.order, current.length)), 0, next);
+        } else {
+          current[i] = next;
+        }
+        return { write: { ...data, photos: current }, result: next };
+      });
+      if (!saved) return err("photo not found", 404);
 
-      const updatedData = { ...manifest.data, photos };
-      const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-
-      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
-
-      return json(updated);
+      return json(saved);
     }
 
     // ── DELETE /api/projects/:slug/photos/:id ────────────────────────────────
@@ -714,19 +783,8 @@ export async function onRequest(ctx) {
       await purgeAssetKeys(env, [...variantKeys, originalKey]);
       await purgeR2Original(env, slug, id);
 
-      // Remove from manifest
-      const updatedData = {
-        ...manifest.data,
-        photos: photos.filter((p) => p.id !== id),
-        lastPhotoId: photoIdHighWater(photos, manifest.data.lastPhotoId),
-      };
-      // Clear cover if it was this photo
-      if (updatedData.cover === id) {
-        updatedData.cover = updatedData.photos[0]?.id ?? "";
-      }
-      const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-
-      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
+      // Remove from manifest (also moves the cover if it was this photo)
+      await removeManifestPhoto(env, slug, id);
       await stageDelete(env.stagingBucket, stubPath(slug, id));
       await removeDeletedReferences(env, { seriesSlug: slug, photoId: id });
 
@@ -783,19 +841,21 @@ export async function onRequest(ctx) {
       if (!manifest) return err("series not found", 404);
 
       const updatableFields = ["title", "description", "cover", "draft", "downloadsDefault", "seriesPosts"];
-      const updatedData = { ...manifest.data };
-      for (const f of updatableFields) {
-        if (body[f] !== undefined) updatedData[f] = body[f];
-      }
-
-      // Reorder photos by ID array
-      if (Array.isArray(body.photoOrder)) {
-        const photoMap = Object.fromEntries((manifest.data.photos ?? []).map(p => [p.id, p]));
-        updatedData.photos = body.photoOrder.map(id => photoMap[id]).filter(Boolean);
-      }
-
-      const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
+      const updatedData = await updateManifest(env, slug, (data) => {
+        const write = { ...data };
+        for (const f of updatableFields) {
+          if (body[f] !== undefined) write[f] = body[f];
+        }
+        // Reorder photos by ID array; photos added meanwhile keep their place at the end.
+        if (Array.isArray(body.photoOrder)) {
+          const current = data.photos ?? [];
+          const photoMap = Object.fromEntries(current.map(p => [p.id, p]));
+          const ordered = body.photoOrder.map(id => photoMap[id]).filter(Boolean);
+          write.photos = [...ordered, ...current.filter(p => !body.photoOrder.includes(p.id))];
+        }
+        return { write, result: write };
+      });
+      if (!updatedData) return err("series not found", 404);
 
       return json(updatedData);
     }
@@ -813,10 +873,11 @@ export async function onRequest(ctx) {
       const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
 
-      const updatedData = { ...manifest.data, draft: Boolean(draft) };
-      const updatedManifest = serializeFrontMatter(updatedData, manifest.body ?? "");
-
-      await stageFile(env.stagingBucket, indexPath(slug), updatedManifest);
+      const ok = await updateManifest(env, slug, (data) => ({
+        write: { ...data, draft: Boolean(draft) },
+        result: true,
+      }));
+      if (!ok) return err("series not found", 404);
 
       return json({ slug, draft: Boolean(draft) });
     }
@@ -1337,28 +1398,21 @@ export async function onRequest(ctx) {
       }
       const limit = typeof reqBody.limit === "number" ? reqBody.limit : 6;
 
-      // Ensure pool manifest exists (draft: true enforced permanently)
-      let poolManifest = await readManifest(env, POOL_SLUG);
-      if (!poolManifest) {
-        const initData = {
-          title: "Pool",
-          description: "Unassigned uploads",
-          date: new Date().toISOString().split("T")[0],
-          draft: true,
-          cover: "",
-          downloadsDefault: false,
-          photos: [],
-        };
-        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(initData));
-        poolManifest = { data: initData, body: "" };
-      }
+      // The pool manifest is created on first use (draft: true enforced permanently).
+      const init = () => ({
+        title: "Pool",
+        description: "Unassigned uploads",
+        date: new Date().toISOString().split("T")[0],
+        draft: true,
+        cover: "",
+        downloadsDefault: false,
+        photos: [],
+      });
 
       const rawListObjects = await listAllObjects(env.originalsBucket, { prefix: "_pool/raw/", include: ["customMetadata"] });
       const rawObjects = rawListObjects.filter(obj => obj.key.endsWith("/original.jpg"));
       const toProcess = rawObjects.slice(0, limit);
 
-      let photos = [...(poolManifest.data.photos ?? [])];
-      let lastPhotoId = poolManifest.data.lastPhotoId ?? 0;
       let processedCount = 0;
 
       for (const rawObj of toProcess) {
@@ -1371,21 +1425,21 @@ export async function onRequest(ctx) {
         const width = parseInt(meta.width ?? "0", 10);
         const height = parseInt(meta.height ?? "0", 10);
 
-        const id = nextPhotoId(photos, lastPhotoId);
-        lastPhotoId = parseInt(id, 10);
+        const id = await reservePhotoId(env, POOL_SLUG, { init });
         const key = `${POOL_SLUG}/${id}`;
 
         await bakePhoto(env, POOL_SLUG, id, buf, { publicOriginal: false });
 
         const photoEntry = { id, key, width, height, caption: "" };
-        photos.push(photoEntry);
 
         // Persist the pool manifest before deleting raw. A crash between these
         // two writes can duplicate the photo on retry; a crash the other way
         // used to drop it permanently (raw gone, unlisted variants in R2).
-        const updatedPoolData = { ...poolManifest.data, photos, lastPhotoId, draft: true };
         await stageFile(env.stagingBucket, stubPath(POOL_SLUG, id), newPhotoStub(id));
-        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
+        await updateManifest(env, POOL_SLUG, (data) => ({
+          write: { ...data, photos: [...(data.photos ?? []), photoEntry], draft: true },
+          result: true,
+        }), { init });
 
         await env.originalsBucket.delete(rawPoolKey(pid));
         processedCount++;
@@ -1418,13 +1472,7 @@ export async function onRequest(ctx) {
       await purgeAssetKeys(env, [...variantKeys, originalKey]);
       await purgeR2Original(env, POOL_SLUG, id);
 
-      const updatedData = {
-        ...poolManifest.data,
-        photos: photos.filter(p => p.id !== id),
-        lastPhotoId: photoIdHighWater(photos, poolManifest.data.lastPhotoId),
-        draft: true,
-      };
-      await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedData, poolManifest.body ?? ""));
+      await removeManifestPhoto(env, POOL_SLUG, id, { draft: true });
       await stageDelete(env.stagingBucket, stubPath(POOL_SLUG, id));
 
       return json({ deleted: id });
@@ -1452,30 +1500,27 @@ export async function onRequest(ctx) {
       if (!targetManifest) return err("series not found", 404);
       if (!poolManifest) return json({ moved: [], skipped: ids });
 
-      let targetPhotos = [...(targetManifest.data.photos ?? [])];
-      let poolPhotos = [...(poolManifest.data.photos ?? [])];
-      const poolLastPhotoId = photoIdHighWater(poolPhotos, poolManifest.data.lastPhotoId);
-      let targetLastPhotoId = targetManifest.data.lastPhotoId ?? 0;
       const downloadsDefault = targetManifest.data.downloadsDefault === true;
       const moved = [];
       const skipped = [];
 
       for (const id of ids) {
-        const poolPhoto = poolPhotos.find(p => p.id === id);
+        const poolPhoto = (await readManifest(env, POOL_SLUG))?.data.photos?.find(p => p.id === id);
         if (!poolPhoto) { skipped.push(id); continue; }
 
-        const newId = nextPhotoId(targetPhotos, targetLastPhotoId);
-        targetLastPhotoId = parseInt(newId, 10);
+        const newId = await reservePhotoId(env, slug);
+        if (!newId) return err("series not found", 404);
         const newKey = `${slug}/${newId}`;
         const variantCopies = [];
 
         // Preflight all source objects before writing or deleting anything.
+        let missing = null;
         for (const size of SIZES) {
           for (const { ext, contentType } of FORMATS) {
             const srcKey = `${POOL_SLUG}/${id}/${size}.${ext}`;
             const dstKey = `${newKey}/${size}.${ext}`;
             const obj = await env.assetsBucket.get(srcKey);
-            if (!obj) throw new Error(`Pool photo ${id} is missing ${size}.${ext}`);
+            if (!obj) { missing ??= `${size}.${ext}`; continue; }
             variantCopies.push({ srcKey, dstKey, obj, contentType });
           }
         }
@@ -1483,7 +1528,13 @@ export async function onRequest(ctx) {
         const srcOrigKey = `${POOL_SLUG}/${id}/original.jpg`;
         const dstOrigKey = `${newKey}/original.jpg`;
         const origObj = await env.originalsBucket.get(srcOrigKey);
-        if (!origObj) throw new Error(`Pool photo ${id} is missing original.jpg`);
+        if (!origObj) missing ??= "original.jpg";
+        if (missing) {
+          // A concurrent move or discard removed it after we looked it up.
+          const stillPooled = (await readManifest(env, POOL_SLUG))?.data.photos?.some(p => p.id === id);
+          if (!stillPooled) { skipped.push(id); continue; }
+          throw new Error(`Pool photo ${id} is missing ${missing}`);
+        }
         const origBuffer = await origObj.arrayBuffer();
 
         // Copy all destination objects before touching manifests or sources.
@@ -1496,20 +1547,28 @@ export async function onRequest(ctx) {
         }
 
         const newPhoto = { id: newId, key: newKey, width: poolPhoto.width, height: poolPhoto.height, caption: poolPhoto.caption || "" };
-        targetPhotos.push(newPhoto);
-        poolPhotos = poolPhotos.filter(p => p.id !== id);
-        moved.push(newPhoto);
 
         // Stage both manifests before deleting pool sources. A crash after
         // delete-but-before-stage used to drop the photo from both places.
-        const updatedTargetData = { ...targetManifest.data, photos: targetPhotos, lastPhotoId: targetLastPhotoId };
-        if (!updatedTargetData.cover && targetPhotos.length > 0) {
-          updatedTargetData.cover = targetPhotos[0].id;
-        }
-        const updatedPoolData = { ...poolManifest.data, photos: poolPhotos, lastPhotoId: poolLastPhotoId, draft: true };
         await stageFile(env.stagingBucket, stubPath(slug, newId), newPhotoStub(newId));
-        await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter(updatedTargetData, targetManifest.body ?? ""));
-        await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
+        const added = await updateManifest(env, slug, (data) => {
+          const photos = [...(data.photos ?? []), newPhoto];
+          return { write: { ...data, photos, cover: data.cover || photos[0].id }, result: true };
+        });
+        if (!added) {
+          await cleanupPhotoAssets(env, slug, newId);
+          await stageDelete(env.stagingBucket, stubPath(slug, newId));
+          return err("series was deleted during the move", 409);
+        }
+        if (!(await removeManifestPhoto(env, POOL_SLUG, id, { draft: true }))) {
+          // Another request moved or discarded this pool photo first: undo our copy.
+          await removeManifestPhoto(env, slug, newId);
+          await cleanupPhotoAssets(env, slug, newId);
+          await stageDelete(env.stagingBucket, stubPath(slug, newId));
+          skipped.push(id);
+          continue;
+        }
+        moved.push(newPhoto);
         await stageDelete(env.stagingBucket, stubPath(POOL_SLUG, id));
 
         await Promise.all(variantCopies.map(({ srcKey }) => env.assetsBucket.delete(srcKey)));

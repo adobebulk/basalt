@@ -72,8 +72,8 @@
     <section class="relative overflow-hidden" style="aspect-ratio:16/9;max-height:80vh;">
       <a href="{{ $heroPermalink }}" style="position:absolute;inset:0;z-index:1;" aria-label="View photo"></a>
       <img
-        src="{{ $base }}/{{ $heroKey }}/1200.jpg"
-        srcset="{{ $base }}/{{ $heroKey }}/600.jpg 600w, {{ $base }}/{{ $heroKey }}/1200.jpg 1200w, {{ $base }}/{{ $heroKey }}/2400.jpg 2400w"
+        src="{{ partial "asset-url.html" (dict "photo" $heroPhoto "key" $heroKey "file" "1200.jpg") }}"
+        srcset="{{ partial "asset-url.html" (dict "photo" $heroPhoto "key" $heroKey "file" "600.jpg") }} 600w, {{ partial "asset-url.html" (dict "photo" $heroPhoto "key" $heroKey "file" "1200.jpg") }} 1200w, {{ partial "asset-url.html" (dict "photo" $heroPhoto "key" $heroKey "file" "2400.jpg") }} 2400w"
         sizes="100vw"
         class="w-full h-full object-cover"
         alt="{{ with $heroPhoto.caption }}{{ . }}{{ else }}Hero photo{{ end }}"
@@ -104,17 +104,17 @@
             {{- $page := site.GetPage (printf "/projects/%s" $item.slug) -}}
             {{- with $page -}}
               {{- if not .Params.draft -}}
-                {{- $coverKey := "" -}}
+                {{- $coverPhoto := dict -}}
                 {{- $coverID := .Params.cover -}}
                 {{- range .Params.photos -}}
-                  {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
+                  {{- if eq .id $coverID -}}{{- $coverPhoto = . -}}{{- end -}}
                 {{- end -}}
-                {{- if and (eq $coverKey "") (gt (len .Params.photos) 0) -}}
-                  {{- $coverKey = (index .Params.photos 0).key -}}
+                {{- if and (not $coverPhoto.key) (gt (len .Params.photos) 0) -}}
+                  {{- $coverPhoto = index .Params.photos 0 -}}
                 {{- end -}}
                 <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
-                  {{- if ne $coverKey "" -}}
-                  <img src="{{ $base }}/{{ $coverKey }}/600.jpg" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102" alt="{{ .Title }}" loading="lazy">
+                  {{- if $coverPhoto.key -}}
+                  <img src="{{ partial "asset-url.html" (dict "photo" $coverPhoto "file" "600.jpg") }}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102" alt="{{ .Title }}" loading="lazy">
                   {{- end -}}
                   <div class="absolute inset-0 flex flex-col justify-end p-4 bg-gradient-to-t from-black/60 to-transparent">
                     <span class="text-white text-sm font-semibold">{{ if ne $label "" }}{{ $label }}{{ else }}{{ .Title }}{{ end }}</span>
@@ -150,7 +150,7 @@
                 {{- with $targetPhoto -}}
                   {{- $photoPermalink := printf "/projects/%s/%s/" $item.slug .id -}}
                   <a href="{{ $photoPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
-                    <img src="{{ $base }}/{{ .key }}/600.jpg" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102" alt="{{ with .caption }}{{ . }}{{ else }}Photo{{ end }}" loading="lazy">
+                    <img src="{{ partial "asset-url.html" (dict "photo" . "file" "600.jpg") }}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-102" alt="{{ with .caption }}{{ . }}{{ else }}Photo{{ end }}" loading="lazy">
                     <div class="absolute inset-0 flex flex-col justify-end p-4 bg-gradient-to-t from-black/60 to-transparent">
                       <span class="text-white text-sm font-semibold">{{ if ne $label "" }}{{ $label }}{{ else }}{{ with .caption }}{{ . }}{{ else }}Photo {{ .id }}{{ end }}{{ end }}</span>
                       {{- with .body -}}<span class="text-white/60 text-xs mt-0.5">Read →</span>{{- end -}}
@@ -174,16 +174,16 @@
         {{- range sort $projects "Date" "desc" -}}
           {{- $photos := .Params.photos -}}
           {{- $count := len $photos -}}
-          {{- $coverKey := "" -}}
+          {{- $coverPhoto := dict -}}
           {{- $coverID := .Params.cover -}}
           {{- range $photos -}}
-            {{- if eq .id $coverID -}}{{- $coverKey = .key -}}{{- end -}}
+            {{- if eq .id $coverID -}}{{- $coverPhoto = . -}}{{- end -}}
           {{- end -}}
-          {{- if and (eq $coverKey "") (gt $count 0) -}}{{- $coverKey = (index $photos 0).key -}}{{- end -}}
+          {{- if and (not $coverPhoto.key) (gt $count 0) -}}{{- $coverPhoto = index $photos 0 -}}{{- end -}}
 
           <a href="{{ .RelPermalink }}" class="relative block overflow-hidden rounded-sm bg-stone-200 aspect-[4/3] group">
-            {{- if ne $coverKey "" -}}
-              <div class="project-thumb" style="background-image: url('{{ $base }}/{{ $coverKey }}/600.jpg')"></div>
+            {{- if $coverPhoto.key -}}
+              <div class="project-thumb" style="background-image: url('{{ partial "asset-url.html" (dict "photo" $coverPhoto "file" "600.jpg") }}')"></div>
             {{- else -}}
               <div class="w-full h-full bg-stone-200"></div>
             {{- end -}}

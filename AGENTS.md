@@ -186,6 +186,7 @@ photos:
     body: |                  # optional long-form markdown; shown on per-photo permalink
       The light at 2am was unlike anything I'd seen.
     downloadable: true       # per-photo override of downloadsDefault
+    rev: 1                   # set by Re-process; public variant URLs get ?v=<rev>
 seriesPosts:               # optional list of posts attached to this series
   - slug: "my-trip-report"
     label: ""              # optional display override; falls back to post title
@@ -299,6 +300,7 @@ All routes implemented in `functions/api/[[route]].js`. Write routes stage to `_
 ## Hugo template notes
 
 - **No build-time image processing.** Templates read the `photos` manifest and emit `srcset` URLs at `{{ .Site.Params.assetsBaseURL }}/<key>/<size>.<fmt>` → `/assets/...` — they do not use `.Resources`, `.Fill`, or `.Resize`.
+- **Build variant URLs with `partials/asset-url.html`** (`partial "asset-url.html" (dict "photo" $p "file" "600.jpg")`, optional `"key"`). It appends `?v=<rev>` after a Re-process, because variants are rewritten in place and `/assets` is cached immutable. Pass an empty `dict` rather than nil when there may be no photo.
 - **og:image / twitter:image** must be absolute. `og.html` uses `absURL` on the root-relative asset path to produce `https://photos.ctsmith.org/assets/<key>/1200.jpg`. (Always JPEG, never AVIF — unfurlers don't render AVIF.)
 - **Homepage** (`index.html`): 4 sections — hero, featured row, series grid, recent posts strip.
   - Hero: `heroPhotoKey` is split on `/` to get `<series-slug>/<photo-id>`; series page is looked up via `site.GetPage` to find the photo's caption; clicking the hero goes to `/projects/<slug>/<id>/` (always derived, never from `heroLink`); caption renders as a gradient overlay if present.
@@ -349,6 +351,9 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 - [ ] Phase 0: wire Cloudflare/GitHub account bindings for production (see RUNBOOK.md).
 - [ ] Admin UI: drag-to-reorder photos (currently up/down arrows; pointer drag would be smoother).
+- [ ] Two `POST /api/pool/process` calls running at once can each bake the same raw drop (a duplicate pool photo, never a wrong one). Claim raw objects before baking if a scheduler ever runs alongside the admin.
+- [ ] `POST /api/rebuild` flushes `_pending/` without coordinating with writes in flight; avoid editing while a Rebuild is running.
+- [ ] Manifest compare-and-swap relies on R2 conditional puts (`If-Match` / `If-None-Match: *`), verified in wrangler's local R2 only — confirm once against production R2.
 
 ---
 
@@ -358,7 +363,8 @@ During local `wrangler pages dev`, logs print to the terminal.
 - Fix: uploads could show the wrong (previously deleted or moved-out-of-pool) photo. Cause: `nextPhotoId()` was max+1, so deleting or moving out the top photo freed its id, and the transform source `${ASSETS_R2_PUBLIC_URL}/<slug>/<id>/original.jpg` was edge-cached and never purged, so a reused id baked the old image.
 - Manifests now carry `lastPhotoId` (series and pool); upload, pool process and from-pool persist it in the same manifest write, and photo delete, pool discard and pool move-out record it from the pre-removal list, so ids are never reused — including on legacy manifests that predate the field.
 - `generateVariants()` transforms from a unique `_transform/<uuid>.jpg` source in ASSETS_BUCKET and deletes it afterwards, so a bake can never read a stale cached original and a private original is never exposed at `/assets/<slug>/<id>/original.jpg`. A Worker killed mid-transform can leave an unguessable `_transform/` object behind. Photo delete, pool discard and pool-move also purge the R2-domain original URL.
-- New `POST /api/projects/:slug/photos/:id/rebake` + "↻ Re-process" button on photo cards to repair photos baked from a stale original. It re-reads the manifest after transforming and only patches that photo's width/height, so edits saved meanwhile survive. Browsers that already cached the old `/assets/` variant (immutable, 1y) may keep showing it until their cache clears; the admin busts its own thumbnail after a re-process.
+- New `POST /api/projects/:slug/photos/:id/rebake` + "↻ Re-process" button on photo cards to repair photos baked from a stale original. It re-reads the manifest after transforming and only patches that photo's width/height, so edits saved meanwhile survive. Each rebake bumps the photo's `rev`; templates and the admin append `?v=<rev>` to its variant URLs, so browsers holding the old immutable copy fetch the new one after the next Rebuild.
+- Every series/pool manifest write goes through `updateManifest()`: compare-and-swap on the staged copy (`If-Match` on its etag, `If-None-Match: *` when nothing is staged yet), retried on conflict. New photo ids are reserved in the manifest *before* any R2 object is written, so concurrent uploads, pool processing and moves can no longer share an id or drop each other's changes. A failed bake leaves a gap in the numbering.
 
 ### v0.4.1
 - Admin can list GitHub series/posts/pages without a PAT on a public repo (`listGithubDirs` requires `GITHUB_REPO` only). Writes still need a real token.
