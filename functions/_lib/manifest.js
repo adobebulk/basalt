@@ -57,9 +57,17 @@ export function slugify(str) {
  * returned id's number back to `lastPhotoId` in the same manifest write.
  */
 export function nextPhotoId(photos, lastPhotoId = 0) {
-  const max = photos.reduce((m, p) => {
+  return String(photoIdHighWater(photos, lastPhotoId) + 1).padStart(3, "0");
+}
+
+/**
+ * Highest photo id number ever issued for a manifest. Paths that remove photos
+ * persist this (computed from the list *before* removal) as `lastPhotoId`, so
+ * legacy manifests without the field cannot hand a removed id out again.
+ */
+export function photoIdHighWater(photos, lastPhotoId = 0) {
+  return photos.reduce((m, p) => {
     const n = parseInt(p.id, 10);
     return isNaN(n) ? m : Math.max(m, n);
   }, Number(lastPhotoId) || 0);
-  return String(max + 1).padStart(3, "0");
 }

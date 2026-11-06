@@ -35,6 +35,7 @@ import {
   newPhotoStub,
   slugify,
   nextPhotoId,
+  photoIdHighWater,
 } from "../_lib/manifest.js";
 
 // ─── Response helpers ────────────────────────────────────────────────────────
@@ -101,7 +102,6 @@ const FORMATS = [
 
 /**
  * Generate all 6 variants for one photo via "Transform via Workers".
- * The original must already be in ASSETS_BUCKET before calling this.
  * Strips all metadata (metadata: "none") — no GPS or EXIF in published files.
  * Returns array of { key, buffer, contentType } ready to PUT to R2.
  *
@@ -112,11 +112,23 @@ const FORMATS = [
  * Each fetch is wrapped with a 25-second AbortController timeout so a stalled
  * transform throws a clear error instead of hanging indefinitely.
  */
-async function generateVariants(slug, id, env, nonce) {
-  // The ?v= nonce makes every bake read the bytes just written: the R2 custom
-  // domain is edge-cached, and without it a reused or re-baked id would
-  // transform a stale cached original (the "wrong photo uploaded" bug).
-  const originalUrl = `${env.assetsR2Url}/${slug}/${id}/original.jpg?v=${nonce}`;
+async function generateVariants(slug, id, env, originalBuffer) {
+  // The source goes to a fresh random key, never <slug>/<id>/original.jpg: that
+  // key is the public download URL (served immutable for a year), and the R2
+  // domain is edge-cached, so reusing it either leaks a private original or
+  // transforms a stale cached one (the "wrong photo uploaded" bug).
+  const sourceKey = `_transform/${crypto.randomUUID()}.jpg`;
+  await env.assetsBucket.put(sourceKey, originalBuffer, {
+    httpMetadata: { contentType: "image/jpeg" },
+  });
+  try {
+    return await transformVariants(slug, id, `${env.assetsR2Url}/${sourceKey}`);
+  } finally {
+    await env.assetsBucket.delete(sourceKey);
+  }
+}
+
+async function transformVariants(slug, id, originalUrl) {
   console.log(`[generateVariants] starting transforms for ${slug}/${id} from ${originalUrl}`);
 
   const jobs = SIZES.flatMap((size) =>
@@ -217,7 +229,7 @@ async function purgeAssetKeys(env, keys) {
   await purgeCacheFiles(env, keys.map((key) => assetUrl(env, key)));
 }
 
-/** Purge the R2 custom-domain URL used as the transform source (same zone as PUBLIC_ORIGIN). */
+/** Purge a removed photo's original from the R2 custom domain (same zone as PUBLIC_ORIGIN). */
 async function purgeR2Original(env, slug, id) {
   if (!env.assetsR2Url) return;
   await purgeCacheFiles(env, [`${env.assetsR2Url}/${slug}/${id}/original.jpg`]);
@@ -233,16 +245,12 @@ async function cleanupPhotoAssets(env, slug, id) {
 
 /**
  * Bake one original into private original + 6 public variants.
- * The original is temporarily public so Transform via Workers can fetch it.
  * On failure, any objects written for this slug/id are removed so a retry is clean.
  */
 async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false } = {}) {
   const originalKey = `${slug}/${id}/original.jpg`;
-  await env.assetsBucket.put(originalKey, originalBuffer, {
-    httpMetadata: { contentType: "image/jpeg" },
-  });
   try {
-    const variants = await generateVariants(slug, id, env, crypto.randomUUID());
+    const variants = await generateVariants(slug, id, env, originalBuffer);
     for (const v of variants) {
       await env.assetsBucket.put(v.key, v.buffer, {
         httpMetadata: { contentType: v.contentType },
@@ -251,8 +259,10 @@ async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false
     await env.originalsBucket.put(originalKey, originalBuffer, {
       httpMetadata: { contentType: "image/jpeg" },
     });
-    if (!publicOriginal) {
-      await env.assetsBucket.delete(originalKey);
+    if (publicOriginal) {
+      await env.assetsBucket.put(originalKey, originalBuffer, {
+        httpMetadata: { contentType: "image/jpeg" },
+      });
     }
   } catch (e) {
     console.error(`[bakePhoto] failed ${slug}/${id}:`, e);
@@ -269,25 +279,16 @@ async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false
  * Regenerate the 6 public variants for an existing photo from its private
  * original in ORIGINALS_BUCKET. Unlike bakePhoto, a failure never deletes the
  * private original or the existing variants — the original may be the only copy.
+ * The public original (downloadable photos only) is left exactly as it was.
  */
 async function rebakePhoto(env, slug, id, originalBuffer) {
-  const originalKey = `${slug}/${id}/original.jpg`;
-  const wasPublic = Boolean(await env.assetsBucket.head(originalKey));
-  await env.assetsBucket.put(originalKey, originalBuffer, {
-    httpMetadata: { contentType: "image/jpeg" },
-  });
-  try {
-    const variants = await generateVariants(slug, id, env, crypto.randomUUID());
-    for (const v of variants) {
-      await env.assetsBucket.put(v.key, v.buffer, {
-        httpMetadata: { contentType: v.contentType },
-      });
-    }
-  } finally {
-    if (!wasPublic) await env.assetsBucket.delete(originalKey);
+  const variants = await generateVariants(slug, id, env, originalBuffer);
+  for (const v of variants) {
+    await env.assetsBucket.put(v.key, v.buffer, {
+      httpMetadata: { contentType: v.contentType },
+    });
   }
-  await purgeAssetKeys(env, photoAssetKeys(slug, id));
-  await purgeR2Original(env, slug, id);
+  await purgeAssetKeys(env, variants.map((v) => v.key));
 }
 
 async function listAllObjects(bucket, options) {
@@ -604,9 +605,7 @@ export async function onRequest(ctx) {
 
       const manifest = await readManifest(env, slug);
       if (!manifest) return err("series not found", 404);
-      const photos = [...(manifest.data.photos ?? [])];
-      const idx = photos.findIndex((p) => p.id === id);
-      if (idx === -1) return err("photo not found", 404);
+      if (!(manifest.data.photos ?? []).some((p) => p.id === id)) return err("photo not found", 404);
 
       const obj = await env.originalsBucket.get(`${slug}/${id}/original.jpg`);
       if (!obj) return err("original not found", 404);
@@ -614,9 +613,18 @@ export async function onRequest(ctx) {
 
       await rebakePhoto(env, slug, id, buf);
 
+      // Transforms take seconds; re-read so caption edits or reorders saved
+      // meanwhile are not overwritten by the pre-transform snapshot.
+      const current = await readManifest(env, slug);
+      const photos = [...(current?.data.photos ?? [])];
+      const idx = photos.findIndex((p) => p.id === id);
+      if (idx === -1) return err("photo was removed while re-processing", 409);
+
       const dims = getImageDimensions(buf);
-      if (dims) photos[idx] = { ...photos[idx], width: dims.width, height: dims.height };
-      await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter({ ...manifest.data, photos }, manifest.body ?? ""));
+      if (dims && (photos[idx].width !== dims.width || photos[idx].height !== dims.height)) {
+        photos[idx] = { ...photos[idx], width: dims.width, height: dims.height };
+        await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter({ ...current.data, photos }, current.body ?? ""));
+      }
 
       return json(photos[idx]);
     }
@@ -710,6 +718,7 @@ export async function onRequest(ctx) {
       const updatedData = {
         ...manifest.data,
         photos: photos.filter((p) => p.id !== id),
+        lastPhotoId: photoIdHighWater(photos, manifest.data.lastPhotoId),
       };
       // Clear cover if it was this photo
       if (updatedData.cover === id) {
@@ -1409,7 +1418,12 @@ export async function onRequest(ctx) {
       await purgeAssetKeys(env, [...variantKeys, originalKey]);
       await purgeR2Original(env, POOL_SLUG, id);
 
-      const updatedData = { ...poolManifest.data, photos: photos.filter(p => p.id !== id), draft: true };
+      const updatedData = {
+        ...poolManifest.data,
+        photos: photos.filter(p => p.id !== id),
+        lastPhotoId: photoIdHighWater(photos, poolManifest.data.lastPhotoId),
+        draft: true,
+      };
       await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedData, poolManifest.body ?? ""));
       await stageDelete(env.stagingBucket, stubPath(POOL_SLUG, id));
 
@@ -1440,6 +1454,7 @@ export async function onRequest(ctx) {
 
       let targetPhotos = [...(targetManifest.data.photos ?? [])];
       let poolPhotos = [...(poolManifest.data.photos ?? [])];
+      const poolLastPhotoId = photoIdHighWater(poolPhotos, poolManifest.data.lastPhotoId);
       let targetLastPhotoId = targetManifest.data.lastPhotoId ?? 0;
       const downloadsDefault = targetManifest.data.downloadsDefault === true;
       const moved = [];
@@ -1491,7 +1506,7 @@ export async function onRequest(ctx) {
         if (!updatedTargetData.cover && targetPhotos.length > 0) {
           updatedTargetData.cover = targetPhotos[0].id;
         }
-        const updatedPoolData = { ...poolManifest.data, photos: poolPhotos, draft: true };
+        const updatedPoolData = { ...poolManifest.data, photos: poolPhotos, lastPhotoId: poolLastPhotoId, draft: true };
         await stageFile(env.stagingBucket, stubPath(slug, newId), newPhotoStub(newId));
         await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter(updatedTargetData, targetManifest.body ?? ""));
         await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
