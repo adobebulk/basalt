@@ -7,7 +7,8 @@
     "css:watch": "tailwindcss -i site/assets/css/input.css -o site/static/css/style.css --watch",
     "hugo:dev": "hugo server --source site --disableFastRender",
     "dev": "node scripts/write-version.js && concurrently \"npm run css:watch\" \"npm run hugo:dev\"",
-    "build": "node scripts/write-version.js && tailwindcss -i site/assets/css/input.css -o site/static/css/style.css --minify && hugo --source site --minify"
+    "build": "node scripts/write-version.js && tailwindcss -i site/assets/css/input.css -o site/static/css/style.css --minify && hugo --source site --minify",
+    "test:pipeline": "node --no-warnings scripts/test-photo-pipeline.mjs"
   },
   "devDependencies": {
     "@tailwindcss/typography": "^0.5.19",

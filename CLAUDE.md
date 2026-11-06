@@ -143,9 +143,14 @@ npm run build            # tailwind --minify && hugo --source site --minify
 # Local Pages Functions dev (stubs return 501; /assets/* errors without R2 binding)
 npx wrangler pages dev site/public
 
+# Photo pipeline harness (mocked R2 + edge-cache stub) — must print ALL PASSED
+npm run test:pipeline
+
 # Live admin Worker logs (production)
 npx wrangler tail
 ```
+
+The full ship pipeline (branch → reproduce → fix → verify → version/docs → review → push → PR, plus pulling engine changes into an instance) is the project skill `.claude/skills/basalt-workflow/SKILL.md`. Codex: read that file and follow it.
 
 Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin`, gated by Cloudflare Access), not the CLI.
 
