@@ -53,7 +53,7 @@ unless the change is meant to alter CSS.
 
 - Patch bump for fixes, minor for features. Update together:
   `package.json`, `package-lock.json` (top two `"version"` fields only),
-  `wrangler.toml [vars] PACKAGE_VERSION`, `BASALT.md` (Version + Current),
+  `wrangler.toml [vars] PACKAGE_VERSION`, `BASALT.md` (Version + Current; Basalt only),
   `README.md` version line, `CLAUDE.md` Versioning line.
 - `CLAUDE.md`: API table, data model, current state entry (date it).
 - `AGENTS.md` mirrors `CLAUDE.md` for Codex:
