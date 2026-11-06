@@ -8,6 +8,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repo = path.resolve(process.argv[2] ?? path.join(path.dirname(fileURLToPath(import.meta.url)), ".."));
 const { onRequest } = await import(pathToFileURL(path.join(repo, "functions/api/[[route]].js")).href);
+const { onRequest: serveAsset } = await import(pathToFileURL(path.join(repo, "functions/assets/[[path]].js")).href);
+
+// Route logs are captured (and searchable) instead of printed; results use `out`.
+const out = console.log.bind(console);
+const logs = [];
+for (const level of ["log", "warn", "error"]) console[level] = (...a) => logs.push(a.map(String).join(" "));
 
 const R2 = "https://r2.example.com";
 const ORIGIN = "https://example.com";
@@ -54,6 +60,7 @@ class Bucket {
     return {
       key, etag: o.etag, httpEtag: `"${o.etag}"`, customMetadata: o.customMetadata, httpMetadata: o.httpMetadata, size: o.bytes.length,
       get body() { return new Response(o.bytes.slice()).body; },
+      writeHttpMetadata: (h) => { if (o.httpMetadata.contentType) h.set("content-type", o.httpMetadata.contentType); },
       arrayBuffer: async () => o.bytes.slice().buffer,
       text: async () => dec.decode(o.bytes),
     };
@@ -76,9 +83,24 @@ function jpeg(w, h, tag) {
 const tagOf = (bytes) => { const s = dec.decode(bytes); const i = s.indexOf("TAG:"); return i < 0 ? "?" : s.slice(i + 4); };
 
 let assets, originals, edgeCache, transformLog, purged, failTransform, transformHook;
+let githubMode = false, commitHook = null, committedPaths = [];
 function reset() {
   assets = new Bucket("assets"); originals = new Bucket("originals");
   edgeCache = new Map(); transformLog = []; purged = []; failTransform = false; transformHook = null;
+  githubMode = false; commitHook = null; committedPaths = []; logs.length = 0;
+}
+
+// Minimal GitHub Git Data API for flushStaging's commit (only in githubMode).
+async function githubApi(url, opts) {
+  const m = opts.method ?? "GET";
+  const j = (o) => new Response(JSON.stringify(o), { status: 200 });
+  if (m === "GET" && url.includes("/git/ref/heads/")) return j({ object: { sha: "head" } });
+  if (m === "GET" && url.includes("/git/commits/")) return j({ tree: { sha: "tree" } });
+  if (m === "POST" && url.endsWith("/git/blobs")) return j({ sha: "blob" });
+  if (m === "POST" && url.endsWith("/git/trees")) { committedPaths.push(...JSON.parse(opts.body).tree.map((t) => t.path)); return j({ sha: "tree2" }); }
+  if (m === "POST" && url.endsWith("/git/commits")) { if (commitHook) { const h = commitHook; commitHook = null; await h(); } return j({ sha: "commit" }); }
+  if (m === "PATCH" && url.includes("/git/refs/heads/")) return j({});
+  return new Response("", { status: 404 });
 }
 
 globalThis.caches = { default: { delete: async () => true } };
@@ -106,6 +128,8 @@ globalThis.fetch = async (input, opts = {}) => {
     }
     return new Response(src.slice());
   }
+  if (url.startsWith("https://hooks.example.com/")) return new Response("ok");
+  if (githubMode && url.includes("api.github.com")) return githubApi(url, opts);
   if (url.includes("githubusercontent.com") || url.includes("api.github.com")) return new Response("", { status: 404 });
   throw new Error("unexpected fetch " + url);
 };
@@ -113,6 +137,7 @@ globalThis.fetch = async (input, opts = {}) => {
 const env = () => ({
   ASSETS_BUCKET: assets, ORIGINALS_BUCKET: originals, ASSETS_R2_PUBLIC_URL: R2,
   PUBLIC_ORIGIN: ORIGIN, CF_ZONE_ID: "zone", CF_API_TOKEN: "tok", PACKAGE_VERSION: "test",
+  ...(githubMode ? { GITHUB_TOKEN: "gh-test-token", GITHUB_REPO: "owner/repo", DEPLOY_HOOK_URL: "https://hooks.example.com/deploy" } : {}),
 });
 
 async function call(method, segs, { json, files } = {}) {
@@ -141,10 +166,10 @@ const tempLeftovers = () => [...assets.store.keys()].filter((k) => k.startsWith(
 const variantTag = async (key) => { const o = await assets.get(`${key}/1200.jpg`); return o ? (await o.text()).split("<-")[1] : null; };
 
 let failures = 0;
-const check = (name, ok, detail = "") => { if (!ok) failures++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
+const check = (name, ok, detail = "") => { if (!ok) failures++; out(`  ${ok ? "PASS" : "FAIL"}  ${name}${detail ? "  — " + detail : ""}`); };
 
 // ── 1. delete top photo, upload a different one ─────────────────────────────
-console.log("\n[1] series 001–002 → delete 002 → upload a different photo");
+out("\n[1] series 001–002 → delete 002 → upload a different photo");
 reset();
 const { body: s } = await call("POST", ["projects"], { json: { title: "Trip" } });
 const slug = s.slug;
@@ -159,15 +184,21 @@ check("delete purged the R2-domain original", purged.includes(`${R2}/${slug}/002
 check("private original saved correctly", tagOf(originals.store.get(`${slug}/${newId}/original.jpg`)?.bytes ?? new Uint8Array()) === "C");
 
 // ── 2. transform source ─────────────────────────────────────────────────────
-console.log("\n[2] transform source");
+out("\n[2] transform source");
 const last = transformLog.at(-1);
 check("transform reads a unique _transform/<uuid>.jpg source", /\/_transform\/[0-9a-f-]{36}\.jpg$/.test(last), last);
 check("each bake uses a distinct source URL", new Set(transformLog).size === 3, `${new Set(transformLog).size} distinct URLs over 3 bakes`);
 check("non-downloadable upload never writes a public original", !assets.puts.some((k) => k.endsWith("/original.jpg")), assets.puts.filter((k) => k.endsWith("/original.jpg")).join());
 check("no _transform/ objects left behind", tempLeftovers().length === 0, tempLeftovers().join());
+check("temporary source URLs are purged after each bake", transformLog.every((u) => purged.includes(u)));
+check("temporary source URL is never logged", !logs.some((l) => l.includes("_transform/")), logs.find((l) => l.includes("_transform/")));
+await assets.put("_transform/probe.jpg", "secret");
+const probe = await serveAsset({ env: { ASSETS_BUCKET: assets }, params: { path: ["_transform", "probe.jpg"] } });
+const normal = await serveAsset({ env: { ASSETS_BUCKET: assets }, params: { path: [...`${slug}/${newId}`.split("/"), "600.jpg"] } });
+check("/assets refuses _transform/ keys", probe.status === 404 && normal.status === 200, `${probe.status} / ${normal.status}`);
 
 // ── 3. rebake ───────────────────────────────────────────────────────────────
-console.log("\n[3] rebake repairs a stale photo");
+out("\n[3] rebake repairs a stale photo");
 reset();
 const { body: s3 } = await call("POST", ["projects"], { json: { title: "Repair" } });
 await call("POST", ["projects", s3.slug, "photos"], { files: [["a.jpg", jpeg(4000, 3000, "A")]] });
@@ -208,7 +239,7 @@ if (r.status === 404 && r.body?.error === "not found") {
 }
 
 // ── 4. pool ─────────────────────────────────────────────────────────────────
-console.log("\n[4] pool: drop → process → move all → drop more → process");
+out("\n[4] pool: drop → process → move all → drop more → process");
 reset();
 const { body: s4 } = await call("POST", ["projects"], { json: { title: "Dest" } });
 await call("POST", ["pool"], { files: [["p1.jpg", jpeg(100, 100, "P1")], ["p2.jpg", jpeg(100, 100, "P2")]] });
@@ -231,7 +262,7 @@ const mv2 = await call("POST", ["projects", s4.slug, "photos", "from-pool"], { j
 check("second move into series continues 003,004", mv2.body.moved?.map((p) => p.id).join() === "003,004", mv2.body.moved?.map((p) => p.id).join());
 
 // ── 5. legacy manifests (no lastPhotoId) ────────────────────────────────────
-console.log("\n[5] legacy manifests without lastPhotoId");
+out("\n[5] legacy manifests without lastPhotoId");
 reset();
 await stageManifest("legacy", `title: Legacy\ndraft: false\ncover: "001"\n${legacyPhotos("legacy", ["001", "002"])}`);
 await seedPhoto("legacy", "001", "L1"); await seedPhoto("legacy", "002", "L2");
@@ -259,7 +290,7 @@ const lm = (await call("GET", ["pool"])).body.processed.map((p) => p.id);
 check("move-out-then-process on a legacy pool gets 003", lm.join() === "001,003", lm.join());
 
 // ── 6. concurrent requests ──────────────────────────────────────────────────
-console.log("\n[6] concurrent requests on one manifest");
+out("\n[6] concurrent requests on one manifest");
 reset();
 const { body: s6 } = await call("POST", ["projects"], { json: { title: "Busy" } });
 await call("POST", ["projects", s6.slug, "photos"], { files: [["x.jpg", jpeg(100, 100, "X")]] });
@@ -289,7 +320,7 @@ const destPhotos = (await call("GET", ["projects", s6b.slug, "photos"])).body;
 check("same pool photo moved twice at once lands once", movedCount === 1 && destPhotos.length === 1, `moved ${movedCount}, series has ${destPhotos.length}`);
 
 // ── 7. asset revision ───────────────────────────────────────────────────────
-console.log("\n[7] rebake bumps the photo's asset revision");
+out("\n[7] rebake bumps the photo's asset revision");
 reset();
 const { body: s7 } = await call("POST", ["projects"], { json: { title: "Rev" } });
 await call("POST", ["projects", s7.slug, "photos"], { files: [["a.jpg", jpeg(100, 100, "A")]] });
@@ -298,5 +329,22 @@ const r2 = await call("POST", ["projects", s7.slug, "photos", "001", "rebake"]);
 check("rev goes 1 then 2", r1.body?.rev === 1 && r2.body?.rev === 2, `${r1.body?.rev}, ${r2.body?.rev}`);
 check("manifest stores rev: 2", /rev: 2/.test(await manifest(s7.slug)));
 
-console.log(`\n${failures ? failures + " FAILED" : "ALL PASSED"}`);
+// ── 8. Rebuild while an upload lands ────────────────────────────────────────
+out("\n[8] Rebuild keeps changes staged while its GitHub commit is in flight");
+reset();
+githubMode = true;
+const { body: s8 } = await call("POST", ["projects"], { json: { title: "Flush" } });
+await call("POST", ["projects", s8.slug, "photos"], { files: [["a.jpg", jpeg(100, 100, "A")]] });
+let racing;
+commitHook = async () => { racing = await call("POST", ["projects", s8.slug, "photos"], { files: [["b.jpg", jpeg(100, 100, "B")]] }); };
+const rb = await call("POST", ["rebuild"]);
+check("rebuild succeeds", rb.status === 200, `${rb.status} ${JSON.stringify(rb.body)}`);
+check("upload during the commit succeeds", racing?.status === 201, String(racing?.status));
+check("the committed snapshot had photo 001", committedPaths.includes(`site/content/projects/${s8.slug}/001.md`));
+check("manifest updated mid-commit stays pending with 002", /id: ['"]?002/.test(await manifest(s8.slug)), (await manifest(s8.slug)) ? "pending" : "manifest was cleared");
+check("unchanged committed files are cleared", !originals.store.has(`_pending/files/site/content/projects/${s8.slug}/001.md`));
+check("new photo's stub stays pending", originals.store.has(`_pending/files/site/content/projects/${s8.slug}/002.md`));
+githubMode = false;
+
+out(`\n${failures ? failures + " FAILED" : "ALL PASSED"}`);
 process.exit(failures ? 1 : 0);

@@ -117,19 +117,23 @@ async function generateVariants(slug, id, env, originalBuffer) {
   // key is the public download URL (served immutable for a year), and the R2
   // domain is edge-cached, so reusing it either leaks a private original or
   // transforms a stale cached one (the "wrong photo uploaded" bug).
+  // The source URL is never logged, /assets refuses _transform/ keys, and the URL
+  // is purged after the object is deleted so no cached copy outlives the bake.
   const sourceKey = `_transform/${crypto.randomUUID()}.jpg`;
+  const sourceUrl = `${env.assetsR2Url}/${sourceKey}`;
   await env.assetsBucket.put(sourceKey, originalBuffer, {
     httpMetadata: { contentType: "image/jpeg" },
   });
   try {
-    return await transformVariants(slug, id, `${env.assetsR2Url}/${sourceKey}`);
+    return await transformVariants(slug, id, sourceUrl);
   } finally {
     await env.assetsBucket.delete(sourceKey);
+    await purgeCacheFiles(env, [sourceUrl]);
   }
 }
 
 async function transformVariants(slug, id, originalUrl) {
-  console.log(`[generateVariants] starting transforms for ${slug}/${id} from ${originalUrl}`);
+  console.log(`[generateVariants] starting transforms for ${slug}/${id}`);
 
   const jobs = SIZES.flatMap((size) =>
     FORMATS.map(({ format, ext, contentType }) => ({ size, format, ext, contentType }))

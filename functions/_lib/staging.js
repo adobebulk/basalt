@@ -128,16 +128,21 @@ export async function flushStaging(bucket, token, repo) {
   if (!filesObjects.length && !deletesObjects.length)
     return { noop: true };
 
-  const files = await Promise.all(
+  // Snapshot each key with its etag so cleanup can tell whether it changed.
+  const files = (await Promise.all(
     filesObjects.map(async ({ key }) => {
-      const path = key.slice("_pending/files/".length);
-      const obj  = await bucket.get(key);
-      return { path, content: await obj.text() };
+      const obj = await bucket.get(key);
+      if (!obj) return null;
+      return { key, etag: obj.etag, path: key.slice("_pending/files/".length), content: await obj.text() };
     })
-  );
-  const deletions = deletesObjects.map(({ key }) =>
-    key.slice("_pending/deletes/".length)
-  );
+  )).filter(Boolean);
+  const deleteMarkers = (await Promise.all(
+    deletesObjects.map(async ({ key }) => {
+      const obj = await bucket.head(key);
+      return obj ? { key, etag: obj.etag } : null;
+    })
+  )).filter(Boolean);
+  const deletions = deleteMarkers.map(({ key }) => key.slice("_pending/deletes/".length));
 
   // Skip deletions for paths that don't exist in GitHub — sending sha:null for a
   // path GitHub has never seen causes a 422 GitRPC::BadObjectState error.
@@ -150,11 +155,15 @@ export async function flushStaging(bucket, token, repo) {
   await commitFiles({ token, repo,
     message: "content: publish staged changes", files, deletions: existingDeletions });
 
-  // Always clear ALL staging (including phantom deletes that were skipped).
-  await Promise.all([
-    ...filesObjects.map(  ({ key }) => bucket.delete(key)),
-    ...deletesObjects.map(({ key }) => bucket.delete(key)),
-  ]);
+  // Clear only what was committed (including phantom deletes that were skipped).
+  // A key rewritten while the commit was in flight holds a newer change and must
+  // stay pending for the next Rebuild. R2 delete is unconditional, so a write
+  // landing between this head() and delete() can still be lost; that window is
+  // milliseconds instead of the whole GitHub commit.
+  await Promise.all([...files, ...deleteMarkers].map(async ({ key, etag }) => {
+    const current = await bucket.head(key);
+    if (current && current.etag === etag) await bucket.delete(key);
+  }));
 
   return { files: files.length, deletions: existingDeletions.length };
 }
