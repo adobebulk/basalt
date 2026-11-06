@@ -112,8 +112,11 @@ const FORMATS = [
  * Each fetch is wrapped with a 25-second AbortController timeout so a stalled
  * transform throws a clear error instead of hanging indefinitely.
  */
-async function generateVariants(slug, id, env) {
-  const originalUrl = `${env.assetsR2Url}/${slug}/${id}/original.jpg`;
+async function generateVariants(slug, id, env, nonce) {
+  // The ?v= nonce makes every bake read the bytes just written: the R2 custom
+  // domain is edge-cached, and without it a reused or re-baked id would
+  // transform a stale cached original (the "wrong photo uploaded" bug).
+  const originalUrl = `${env.assetsR2Url}/${slug}/${id}/original.jpg?v=${nonce}`;
   console.log(`[generateVariants] starting transforms for ${slug}/${id} from ${originalUrl}`);
 
   const jobs = SIZES.flatMap((size) =>
@@ -214,6 +217,12 @@ async function purgeAssetKeys(env, keys) {
   await purgeCacheFiles(env, keys.map((key) => assetUrl(env, key)));
 }
 
+/** Purge the R2 custom-domain URL used as the transform source (same zone as PUBLIC_ORIGIN). */
+async function purgeR2Original(env, slug, id) {
+  if (!env.assetsR2Url) return;
+  await purgeCacheFiles(env, [`${env.assetsR2Url}/${slug}/${id}/original.jpg`]);
+}
+
 async function cleanupPhotoAssets(env, slug, id) {
   const keys = photoAssetKeys(slug, id);
   await Promise.all([
@@ -233,7 +242,7 @@ async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false
     httpMetadata: { contentType: "image/jpeg" },
   });
   try {
-    const variants = await generateVariants(slug, id, env);
+    const variants = await generateVariants(slug, id, env, crypto.randomUUID());
     for (const v of variants) {
       await env.assetsBucket.put(v.key, v.buffer, {
         httpMetadata: { contentType: v.contentType },
@@ -254,6 +263,31 @@ async function bakePhoto(env, slug, id, originalBuffer, { publicOriginal = false
     }
     throw e;
   }
+}
+
+/**
+ * Regenerate the 6 public variants for an existing photo from its private
+ * original in ORIGINALS_BUCKET. Unlike bakePhoto, a failure never deletes the
+ * private original or the existing variants — the original may be the only copy.
+ */
+async function rebakePhoto(env, slug, id, originalBuffer) {
+  const originalKey = `${slug}/${id}/original.jpg`;
+  const wasPublic = Boolean(await env.assetsBucket.head(originalKey));
+  await env.assetsBucket.put(originalKey, originalBuffer, {
+    httpMetadata: { contentType: "image/jpeg" },
+  });
+  try {
+    const variants = await generateVariants(slug, id, env, crypto.randomUUID());
+    for (const v of variants) {
+      await env.assetsBucket.put(v.key, v.buffer, {
+        httpMetadata: { contentType: v.contentType },
+      });
+    }
+  } finally {
+    if (!wasPublic) await env.assetsBucket.delete(originalKey);
+  }
+  await purgeAssetKeys(env, photoAssetKeys(slug, id));
+  await purgeR2Original(env, slug, id);
 }
 
 async function listAllObjects(bucket, options) {
@@ -526,11 +560,13 @@ export async function onRequest(ctx) {
       let photos = [...(manifest.data.photos ?? [])];
       const downloadsDefault = manifest.data.downloadsDefault === true;
       let cover = manifest.data.cover || "";
+      let lastPhotoId = manifest.data.lastPhotoId ?? 0;
 
       for (const file of files) {
         const originalBuffer = await file.arrayBuffer();
         const dims = getImageDimensions(originalBuffer) ?? { width: 0, height: 0 };
-        const id = nextPhotoId(photos);
+        const id = nextPhotoId(photos, lastPhotoId);
+        lastPhotoId = parseInt(id, 10);
         const key = `${slug}/${id}`;
 
         await bakePhoto(env, slug, id, originalBuffer, { publicOriginal: downloadsDefault });
@@ -543,7 +579,7 @@ export async function onRequest(ctx) {
         // Stage immediately so a later photo failing this request cannot orphan
         // already-baked R2 objects (they would be unlisted and unretryable).
         const updatedManifest = serializeFrontMatter(
-          { ...manifest.data, photos, cover },
+          { ...manifest.data, photos, cover, lastPhotoId },
           manifest.body ?? ""
         );
         await stageFile(env.stagingBucket, stubPath(slug, id), newPhotoStub(id));
@@ -551,6 +587,38 @@ export async function onRequest(ctx) {
       }
 
       return json({ uploaded: addedPhotos }, 201);
+    }
+
+    // ── POST /api/projects/:slug/photos/:id/rebake ───────────────────────────
+    // Regenerates variants from the private original. Repairs photos whose
+    // variants were baked from a stale cached original (pre-v0.4.2 id reuse).
+    if (
+      method === "POST" &&
+      segments.length === 5 &&
+      segments[0] === "projects" &&
+      segments[2] === "photos" &&
+      segments[4] === "rebake"
+    ) {
+      const [, slug, , id] = segments;
+      if (!env.assetsBucket || !env.originalsBucket) return err("R2 not configured", 503);
+
+      const manifest = await readManifest(env, slug);
+      if (!manifest) return err("series not found", 404);
+      const photos = [...(manifest.data.photos ?? [])];
+      const idx = photos.findIndex((p) => p.id === id);
+      if (idx === -1) return err("photo not found", 404);
+
+      const obj = await env.originalsBucket.get(`${slug}/${id}/original.jpg`);
+      if (!obj) return err("original not found", 404);
+      const buf = await obj.arrayBuffer();
+
+      await rebakePhoto(env, slug, id, buf);
+
+      const dims = getImageDimensions(buf);
+      if (dims) photos[idx] = { ...photos[idx], width: dims.width, height: dims.height };
+      await stageFile(env.stagingBucket, indexPath(slug), serializeFrontMatter({ ...manifest.data, photos }, manifest.body ?? ""));
+
+      return json(photos[idx]);
     }
 
     // ── PATCH /api/projects/:slug/photos/:id ─────────────────────────────────
@@ -636,6 +704,7 @@ export async function onRequest(ctx) {
       await env.assetsBucket.delete([...variantKeys, originalKey]);
       await env.originalsBucket.delete(originalKey);
       await purgeAssetKeys(env, [...variantKeys, originalKey]);
+      await purgeR2Original(env, slug, id);
 
       // Remove from manifest
       const updatedData = {
@@ -1280,6 +1349,7 @@ export async function onRequest(ctx) {
       const toProcess = rawObjects.slice(0, limit);
 
       let photos = [...(poolManifest.data.photos ?? [])];
+      let lastPhotoId = poolManifest.data.lastPhotoId ?? 0;
       let processedCount = 0;
 
       for (const rawObj of toProcess) {
@@ -1292,7 +1362,8 @@ export async function onRequest(ctx) {
         const width = parseInt(meta.width ?? "0", 10);
         const height = parseInt(meta.height ?? "0", 10);
 
-        const id = nextPhotoId(photos);
+        const id = nextPhotoId(photos, lastPhotoId);
+        lastPhotoId = parseInt(id, 10);
         const key = `${POOL_SLUG}/${id}`;
 
         await bakePhoto(env, POOL_SLUG, id, buf, { publicOriginal: false });
@@ -1303,7 +1374,7 @@ export async function onRequest(ctx) {
         // Persist the pool manifest before deleting raw. A crash between these
         // two writes can duplicate the photo on retry; a crash the other way
         // used to drop it permanently (raw gone, unlisted variants in R2).
-        const updatedPoolData = { ...poolManifest.data, photos, draft: true };
+        const updatedPoolData = { ...poolManifest.data, photos, lastPhotoId, draft: true };
         await stageFile(env.stagingBucket, stubPath(POOL_SLUG, id), newPhotoStub(id));
         await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedPoolData, poolManifest.body ?? ""));
 
@@ -1336,6 +1407,7 @@ export async function onRequest(ctx) {
       await env.assetsBucket.delete([...variantKeys, originalKey]);
       await env.originalsBucket.delete(originalKey);
       await purgeAssetKeys(env, [...variantKeys, originalKey]);
+      await purgeR2Original(env, POOL_SLUG, id);
 
       const updatedData = { ...poolManifest.data, photos: photos.filter(p => p.id !== id), draft: true };
       await stageFile(env.stagingBucket, indexPath(POOL_SLUG), serializeFrontMatter(updatedData, poolManifest.body ?? ""));
@@ -1368,6 +1440,7 @@ export async function onRequest(ctx) {
 
       let targetPhotos = [...(targetManifest.data.photos ?? [])];
       let poolPhotos = [...(poolManifest.data.photos ?? [])];
+      let targetLastPhotoId = targetManifest.data.lastPhotoId ?? 0;
       const downloadsDefault = targetManifest.data.downloadsDefault === true;
       const moved = [];
       const skipped = [];
@@ -1376,7 +1449,8 @@ export async function onRequest(ctx) {
         const poolPhoto = poolPhotos.find(p => p.id === id);
         if (!poolPhoto) { skipped.push(id); continue; }
 
-        const newId = nextPhotoId(targetPhotos);
+        const newId = nextPhotoId(targetPhotos, targetLastPhotoId);
+        targetLastPhotoId = parseInt(newId, 10);
         const newKey = `${slug}/${newId}`;
         const variantCopies = [];
 
@@ -1413,7 +1487,7 @@ export async function onRequest(ctx) {
 
         // Stage both manifests before deleting pool sources. A crash after
         // delete-but-before-stage used to drop the photo from both places.
-        const updatedTargetData = { ...targetManifest.data, photos: targetPhotos };
+        const updatedTargetData = { ...targetManifest.data, photos: targetPhotos, lastPhotoId: targetLastPhotoId };
         if (!updatedTargetData.cover && targetPhotos.length > 0) {
           updatedTargetData.cover = targetPhotos[0].id;
         }
@@ -1426,6 +1500,7 @@ export async function onRequest(ctx) {
         await Promise.all(variantCopies.map(({ srcKey }) => env.assetsBucket.delete(srcKey)));
         await env.originalsBucket.delete(srcOrigKey);
         await purgeAssetKeys(env, [...variantCopies.map(({ srcKey }) => srcKey), srcOrigKey]);
+        await purgeR2Original(env, POOL_SLUG, id);
       }
 
       return json({ moved, skipped });

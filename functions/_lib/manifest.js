@@ -47,11 +47,19 @@ export function slugify(str) {
     .replace(/^-+|-+$/, "");
 }
 
-/** Generate the next sequential 3-digit photo id given an existing photos array. */
-export function nextPhotoId(photos) {
+/**
+ * Generate the next sequential 3-digit photo id.
+ *
+ * IDs must never be reused: asset URLs (/assets/<slug>/<id>/...) are served as
+ * immutable and the transform source is edge-cached, so a reused ID can show the
+ * previous photo. `lastPhotoId` is a per-manifest high-water mark that survives
+ * deleting or moving out the highest-numbered photo; callers must persist the
+ * returned id's number back to `lastPhotoId` in the same manifest write.
+ */
+export function nextPhotoId(photos, lastPhotoId = 0) {
   const max = photos.reduce((m, p) => {
     const n = parseInt(p.id, 10);
     return isNaN(n) ? m : Math.max(m, n);
-  }, 0);
+  }, Number(lastPhotoId) || 0);
   return String(max + 1).padStart(3, "0");
 }

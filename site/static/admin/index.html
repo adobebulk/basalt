@@ -1327,7 +1327,11 @@ function photoCardHTML(slug, f, idx, total) {
           <button class="photo-body-toggle" onclick="toggleBodyEditor(this,'${slug}','${esc(f.id)}')">
             ${hasBody ? '▸ Edit note' : '▸ Add note'}
           </button>
-          <div id="feat-btn-${slug}-${esc(f.id)}">${featureBtnHTML(slug, f.id)}</div>
+          <div style="display:flex;gap:6px;align-items:center">
+            <button class="photo-feature-btn" title="Rebuild this photo's sizes from the stored original — use if it shows the wrong image"
+              onclick="rebakePhoto('${slug}','${esc(f.id)}',this)">↻ Re-process</button>
+            <div id="feat-btn-${slug}-${esc(f.id)}">${featureBtnHTML(slug, f.id)}</div>
+          </div>
         </div>
         <div class="photo-body-editor hidden" id="body-editor-${slug}-${esc(f.id)}">
           <textarea rows="4" placeholder="Markdown note shown on the photo permalink page…">${esc(hasBody ? f.body : '')}</textarea>
@@ -1523,6 +1527,21 @@ async function clearBody(slug, id, btn) {
     editor.classList.add('hidden');
     btn.remove();
   } catch(e) { toast('Remove failed: ' + e.message, true); }
+}
+
+async function rebakePhoto(slug, id, btn) {
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = '↻ Re-processing…';
+  try {
+    await api('POST', `/projects/${slug}/photos/${id}/rebake`);
+    // /assets URLs are cached as immutable, so bust this device's cached thumbnail.
+    const img = document.querySelector(`#pcard-${slug}-${id} .photo-card-thumb img`);
+    if (img) img.src = img.src.split('?')[0] + '?v=' + Date.now();
+    await refreshStagingStatus();
+    toast(`Re-processed ${id}`);
+  } catch(e) { toast('Re-process failed: ' + e.message, true); }
+  finally { btn.disabled = false; btn.textContent = label; }
 }
 
 async function deletePhoto(slug, id, e) {

@@ -153,7 +153,7 @@ Publishing photos happens through the **admin UI** (at `photos.ctsmith.org/admin
 
 ## Versioning
 
-Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.4.1**
+Source of truth is `package.json`. When bumping the version, update `package.json` **and** `wrangler.toml [vars] PACKAGE_VERSION` together. `site/data/version.yaml` is generated at build time by `scripts/write-version.js` — do not commit it (it is gitignored). Current version: **0.4.2**
 
 ---
 
@@ -171,6 +171,7 @@ date: "2025-08-01"
 draft: false
 cover: "001"                 # photo id used for the homepage cover
 downloadsDefault: false      # series-level default for public original downloads
+lastPhotoId: 3               # high-water mark; photo ids are never reused (see v0.4.2)
 photos:
   - id: "001"
     key: "iceland-2025/001"  # R2 key prefix for this photo's objects
@@ -225,7 +226,7 @@ A permanent, never-published special series that acts as a staging area for bulk
 **Two storage phases:**
 
 - **Raw** (instant on drop, no processing): `ORIGINALS_BUCKET: _pool/raw/<pid>/original.jpg` with `customMetadata { filename, width, height, uploadedAt, status: "raw" }`. `pid` is `crypto.randomUUID()`.
-- **Processed** (after `POST /api/pool/process`): variants live in `ASSETS_BUCKET: _pool/<id>/600.avif` etc., original in `ORIGINALS_BUCKET: _pool/<id>/original.jpg`. `id` is sequential (001, 002, …) via `nextPhotoId()`. Manifest entry in `site/content/projects/_pool/_index.md` staged to `_pending/` — becomes part of GitHub on next Rebuild.
+- **Processed** (after `POST /api/pool/process`): variants live in `ASSETS_BUCKET: _pool/<id>/600.avif` etc., original in `ORIGINALS_BUCKET: _pool/<id>/original.jpg`. `id` is sequential (001, 002, …) via `nextPhotoId()` and never reused (pool manifest carries `lastPhotoId`). Manifest entry in `site/content/projects/_pool/_index.md` staged to `_pending/` — becomes part of GitHub on next Rebuild.
 
 **Move** preflights all variants/original, copies them to the target series key prefix, stages both manifests, then deletes pool objects. No re-processing. Manifests are staged per photo before source deletion so a mid-batch timeout cannot drop a photo from both series and pool.
 
@@ -255,6 +256,7 @@ featured: []          # ordered list of { type: "series"|"post"|"photo", slug, l
 | POST | `/api/projects/:slug/photos` | Upload photos → resize → R2 → manifest |
 | PATCH | `/api/projects/:slug/photos/:id` | Edit `{ caption, body, downloadable }`, reorder |
 | DELETE | `/api/projects/:slug/photos/:id` | Delete a photo (all R2 objects + manifest entry) |
+| POST | `/api/projects/:slug/photos/:id/rebake` | Regenerate variants from the private original (admin "↻ Re-process"); never deletes the original |
 | PATCH | `/api/projects/:slug` | Update metadata `{ title, description, cover, draft, downloadsDefault }` |
 | POST | `/api/projects/:slug/publish` | Publish/unpublish `{ draft: bool }` |
 | POST | `/api/rebuild` | Flush staged changes → GitHub commit + ping Pages deploy hook |
@@ -345,9 +347,15 @@ During local `wrangler pages dev`, logs print to the terminal.
 
 ---
 
-## Current state (last updated: 2026-09-10)
+## Current state (last updated: 2026-11-05)
 
-### v0.4.1 — CURRENT
+### v0.4.2 — CURRENT
+- Fix: uploads could show the wrong (previously deleted or moved-out-of-pool) photo. Cause: `nextPhotoId()` was max+1, so deleting or moving out the top photo freed its id, and the transform source `${ASSETS_R2_PUBLIC_URL}/<slug>/<id>/original.jpg` was edge-cached and never purged, so a reused id baked the old image.
+- Manifests now carry `lastPhotoId` (series and pool); upload, pool process and from-pool persist it in the same manifest write, so ids are never reused. Manifests without it fall back to max+1.
+- `generateVariants()` fetches the transform source with a per-bake `?v=<uuid>` nonce; photo delete, pool discard and pool-move also purge the R2-domain original URL.
+- New `POST /api/projects/:slug/photos/:id/rebake` + "↻ Re-process" button on photo cards to repair photos baked from a stale original. Browsers that already cached the old `/assets/` variant (immutable, 1y) may keep showing it until their cache clears; the admin busts its own thumbnail after a re-process.
+
+### v0.4.1
 - Admin can list GitHub series/posts/pages without a PAT on a public repo (`listGithubDirs` requires `GITHUB_REPO` only). Writes still need a real token.
 
 ### v0.4.0
